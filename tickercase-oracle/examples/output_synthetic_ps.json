@@ -1,0 +1,3331 @@
+{
+  "case_id": "46ebd85a920a43638159c273c76dbbc2",
+  "created_at": "2026-10-01T21:54:45.553411Z",
+  "status": "evaluated",
+  "input_fingerprint": "ea3bd4f2d7fdd783ba6142647d101f4972886d3f8993d60fc4aa36ecabccee56",
+  "confirmed_claim": {
+    "values": {
+      "claim_text": "SYNT will trade at $100 in five years.",
+      "ticker": "SYNT",
+      "currency": "USD",
+      "target_price": "100",
+      "reference_price": "50",
+      "reference_price_date": "2026-09-30",
+      "reference_price_source": "synthetic example value",
+      "horizon_years": "5",
+      "target_assumed_shares": "100000000",
+      "current_shares": "95000000",
+      "valuation_method": "price_to_sales",
+      "valuation_multiple": "25",
+      "base_annual_metric": "200000000",
+      "base_metric_currency": "USD",
+      "base_metric_period": "FY2025 (synthetic)",
+      "filings_since": "2024-01-01",
+      "probability_drift": "0.07",
+      "probability_volatility": null,
+      "share_change_rate": null,
+      "share_change_mode": null,
+      "target_shares_derived": false,
+      "field_sources": {}
+    },
+    "fingerprint": "ea3bd4f2d7fdd783ba6142647d101f4972886d3f8993d60fc4aa36ecabccee56",
+    "confirmed_at": "2026-10-01T21:54:45.553384Z",
+    "value_provenance": {
+      "claim_text": "user_input",
+      "ticker": "user_input",
+      "currency": "user_input",
+      "target_price": "user_input:claim",
+      "reference_price": "user_input:manual_reference_value",
+      "reference_price_date": "user_input:manual_reference_value",
+      "reference_price_source": "user_input",
+      "horizon_years": "user_input:assumption",
+      "target_assumed_shares": "user_input:assumption",
+      "current_shares": "user_input:manual_reference_value",
+      "valuation_method": "user_input:assumption",
+      "valuation_multiple": "user_input:assumption",
+      "base_annual_metric": "user_input:manual_reference_value",
+      "base_metric_currency": "user_input",
+      "base_metric_period": "user_input",
+      "filings_since": "user_input",
+      "probability_drift": "user_input:assumption"
+    }
+  },
+  "calculations": [
+    {
+      "name": "required_return",
+      "status": "ok",
+      "value": "1",
+      "unit": "ratio",
+      "formula": "target_price / reference_price - 1",
+      "inputs": {
+        "target_price": "100",
+        "reference_price": "50",
+        "reference_price_date": "2026-09-30"
+      },
+      "assumptions": [
+        "reference price is a manual value entered by the user"
+      ],
+      "reason": null
+    },
+    {
+      "name": "annualized_price_return",
+      "status": "ok",
+      "value": "0.148698354997035006798626946777928",
+      "unit": "ratio per year",
+      "formula": "(target_price / reference_price) ** (1 / horizon_years) - 1",
+      "inputs": {
+        "target_price": "100",
+        "reference_price": "50",
+        "reference_price_date": "2026-09-30",
+        "horizon_years": "5"
+      },
+      "assumptions": [
+        "horizon_years is a user assumption"
+      ],
+      "reason": null
+    },
+    {
+      "name": "target_market_cap",
+      "status": "ok",
+      "value": "10000000000",
+      "unit": "USD",
+      "formula": "target_price * target_assumed_shares",
+      "inputs": {
+        "target_price": "100",
+        "target_assumed_shares": "100000000"
+      },
+      "assumptions": [
+        "target_assumed_shares is the user's assumed share count at the target date, separate from the current count"
+      ],
+      "reason": null
+    },
+    {
+      "name": "implied_share_count_change",
+      "status": "ok",
+      "value": "0.052631578947368421052631578947368",
+      "unit": "ratio",
+      "formula": "target_assumed_shares / current_shares - 1",
+      "inputs": {
+        "target_assumed_shares": "100000000",
+        "current_shares": "95000000"
+      },
+      "assumptions": [
+        "current_shares is a manual reference value entered by the user"
+      ],
+      "reason": null
+    },
+    {
+      "name": "required_annual_revenue",
+      "status": "ok",
+      "value": "400000000",
+      "unit": "USD per year",
+      "formula": "target_market_cap / assumed_price_to_sales",
+      "inputs": {
+        "target_market_cap": "10000000000",
+        "assumed_price_to_sales": "25"
+      },
+      "assumptions": [
+        "assumed_price_to_sales at the target date is a user assumption"
+      ],
+      "reason": null
+    },
+    {
+      "name": "required_metric_cagr",
+      "status": "ok",
+      "value": "0.148698354997035006798626946777928",
+      "unit": "ratio per year",
+      "formula": "(required_annual_revenue / base_annual_revenue) ** (1 / horizon_years) - 1",
+      "inputs": {
+        "required_annual_revenue": "400000000",
+        "horizon_years": "5",
+        "base_annual_revenue": "200000000"
+      },
+      "assumptions": [
+        "base_annual_revenue is a manual reference value entered by the user",
+        "base period: FY2025 (synthetic)"
+      ],
+      "reason": null
+    }
+  ],
+  "evidence_records": [
+    {
+      "provider_id": "sec_edgar_submissions",
+      "ticker": "SYNT",
+      "cik": "0009999901",
+      "company_name": "Synthetic Example Corp (fictional)",
+      "accession_number": "0009999901-26-000013",
+      "form_type": "8-K",
+      "is_amendment": false,
+      "filing_date": "2026-08-05",
+      "report_date": "2026-08-04",
+      "primary_document": "synt-20260804.htm",
+      "primary_document_description": "8-K",
+      "document_url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990126000013/synt-20260804.htm",
+      "filing_index_url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990126000013/0009999901-26-000013-index.htm",
+      "source_response_url": "https://data.sec.gov/submissions/CIK0009999901.json",
+      "retrieved_at": "2026-10-01T21:54:45.554126Z",
+      "source_captured_at": "2026-10-01T00:00:00Z",
+      "data_mode": "synthetic",
+      "note": "Filing metadata only. The document has not been read and does not by itself support or refute the claim."
+    },
+    {
+      "provider_id": "sec_edgar_submissions",
+      "ticker": "SYNT",
+      "cik": "0009999901",
+      "company_name": "Synthetic Example Corp (fictional)",
+      "accession_number": "0009999901-26-000012",
+      "form_type": "10-Q",
+      "is_amendment": false,
+      "filing_date": "2026-08-01",
+      "report_date": "2026-06-30",
+      "primary_document": "synt-20260630.htm",
+      "primary_document_description": "10-Q",
+      "document_url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990126000012/synt-20260630.htm",
+      "filing_index_url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990126000012/0009999901-26-000012-index.htm",
+      "source_response_url": "https://data.sec.gov/submissions/CIK0009999901.json",
+      "retrieved_at": "2026-10-01T21:54:45.554126Z",
+      "source_captured_at": "2026-10-01T00:00:00Z",
+      "data_mode": "synthetic",
+      "note": "Filing metadata only. The document has not been read and does not by itself support or refute the claim."
+    },
+    {
+      "provider_id": "sec_edgar_submissions",
+      "ticker": "SYNT",
+      "cik": "0009999901",
+      "company_name": "Synthetic Example Corp (fictional)",
+      "accession_number": "0009999901-26-000010",
+      "form_type": "10-Q",
+      "is_amendment": false,
+      "filing_date": "2026-05-02",
+      "report_date": "2026-03-31",
+      "primary_document": "synt-20260331.htm",
+      "primary_document_description": "10-Q",
+      "document_url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990126000010/synt-20260331.htm",
+      "filing_index_url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990126000010/0009999901-26-000010-index.htm",
+      "source_response_url": "https://data.sec.gov/submissions/CIK0009999901.json",
+      "retrieved_at": "2026-10-01T21:54:45.554126Z",
+      "source_captured_at": "2026-10-01T00:00:00Z",
+      "data_mode": "synthetic",
+      "note": "Filing metadata only. The document has not been read and does not by itself support or refute the claim."
+    },
+    {
+      "provider_id": "sec_edgar_submissions",
+      "ticker": "SYNT",
+      "cik": "0009999901",
+      "company_name": "Synthetic Example Corp (fictional)",
+      "accession_number": "0009999901-26-000009",
+      "form_type": "10-K/A",
+      "is_amendment": true,
+      "filing_date": "2026-03-20",
+      "report_date": "2025-12-31",
+      "primary_document": "synt-20251231a.htm",
+      "primary_document_description": "10-K/A",
+      "document_url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990126000009/synt-20251231a.htm",
+      "filing_index_url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990126000009/0009999901-26-000009-index.htm",
+      "source_response_url": "https://data.sec.gov/submissions/CIK0009999901.json",
+      "retrieved_at": "2026-10-01T21:54:45.554126Z",
+      "source_captured_at": "2026-10-01T00:00:00Z",
+      "data_mode": "synthetic",
+      "note": "Filing metadata only. The document has not been read and does not by itself support or refute the claim."
+    },
+    {
+      "provider_id": "sec_edgar_submissions",
+      "ticker": "SYNT",
+      "cik": "0009999901",
+      "company_name": "Synthetic Example Corp (fictional)",
+      "accession_number": "0009999901-26-000008",
+      "form_type": "10-K",
+      "is_amendment": false,
+      "filing_date": "2026-02-20",
+      "report_date": "2025-12-31",
+      "primary_document": "synt-20251231.htm",
+      "primary_document_description": "10-K",
+      "document_url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990126000008/synt-20251231.htm",
+      "filing_index_url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990126000008/0009999901-26-000008-index.htm",
+      "source_response_url": "https://data.sec.gov/submissions/CIK0009999901.json",
+      "retrieved_at": "2026-10-01T21:54:45.554126Z",
+      "source_captured_at": "2026-10-01T00:00:00Z",
+      "data_mode": "synthetic",
+      "note": "Filing metadata only. The document has not been read and does not by itself support or refute the claim."
+    },
+    {
+      "provider_id": "sec_edgar_submissions",
+      "ticker": "SYNT",
+      "cik": "0009999901",
+      "company_name": "Synthetic Example Corp (fictional)",
+      "accession_number": "0009999901-26-000007",
+      "form_type": "8-K",
+      "is_amendment": false,
+      "filing_date": "2026-01-15",
+      "report_date": "2026-01-14",
+      "primary_document": "synt-20260114.htm",
+      "primary_document_description": "8-K",
+      "document_url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990126000007/synt-20260114.htm",
+      "filing_index_url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990126000007/0009999901-26-000007-index.htm",
+      "source_response_url": "https://data.sec.gov/submissions/CIK0009999901.json",
+      "retrieved_at": "2026-10-01T21:54:45.554126Z",
+      "source_captured_at": "2026-10-01T00:00:00Z",
+      "data_mode": "synthetic",
+      "note": "Filing metadata only. The document has not been read and does not by itself support or refute the claim."
+    },
+    {
+      "provider_id": "sec_edgar_submissions",
+      "ticker": "SYNT",
+      "cik": "0009999901",
+      "company_name": "Synthetic Example Corp (fictional)",
+      "accession_number": "0009999901-25-000006",
+      "form_type": "10-Q",
+      "is_amendment": false,
+      "filing_date": "2025-11-01",
+      "report_date": "2025-09-30",
+      "primary_document": "synt-20250930.htm",
+      "primary_document_description": "10-Q",
+      "document_url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990125000006/synt-20250930.htm",
+      "filing_index_url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990125000006/0009999901-25-000006-index.htm",
+      "source_response_url": "https://data.sec.gov/submissions/CIK0009999901.json",
+      "retrieved_at": "2026-10-01T21:54:45.554126Z",
+      "source_captured_at": "2026-10-01T00:00:00Z",
+      "data_mode": "synthetic",
+      "note": "Filing metadata only. The document has not been read and does not by itself support or refute the claim."
+    },
+    {
+      "provider_id": "sec_edgar_submissions",
+      "ticker": "SYNT",
+      "cik": "0009999901",
+      "company_name": "Synthetic Example Corp (fictional)",
+      "accession_number": "0009999901-25-000005",
+      "form_type": "10-Q",
+      "is_amendment": false,
+      "filing_date": "2025-08-01",
+      "report_date": "2025-06-30",
+      "primary_document": "synt-20250630.htm",
+      "primary_document_description": "10-Q",
+      "document_url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990125000005/synt-20250630.htm",
+      "filing_index_url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990125000005/0009999901-25-000005-index.htm",
+      "source_response_url": "https://data.sec.gov/submissions/CIK0009999901.json",
+      "retrieved_at": "2026-10-01T21:54:45.554126Z",
+      "source_captured_at": "2026-10-01T00:00:00Z",
+      "data_mode": "synthetic",
+      "note": "Filing metadata only. The document has not been read and does not by itself support or refute the claim."
+    },
+    {
+      "provider_id": "sec_edgar_submissions",
+      "ticker": "SYNT",
+      "cik": "0009999901",
+      "company_name": "Synthetic Example Corp (fictional)",
+      "accession_number": "0009999901-25-000004",
+      "form_type": "10-Q",
+      "is_amendment": false,
+      "filing_date": "2025-05-02",
+      "report_date": "2025-03-31",
+      "primary_document": "synt-20250331.htm",
+      "primary_document_description": "10-Q",
+      "document_url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990125000004/synt-20250331.htm",
+      "filing_index_url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990125000004/0009999901-25-000004-index.htm",
+      "source_response_url": "https://data.sec.gov/submissions/CIK0009999901.json",
+      "retrieved_at": "2026-10-01T21:54:45.554126Z",
+      "source_captured_at": "2026-10-01T00:00:00Z",
+      "data_mode": "synthetic",
+      "note": "Filing metadata only. The document has not been read and does not by itself support or refute the claim."
+    },
+    {
+      "provider_id": "sec_edgar_submissions",
+      "ticker": "SYNT",
+      "cik": "0009999901",
+      "company_name": "Synthetic Example Corp (fictional)",
+      "accession_number": "0009999901-25-000003",
+      "form_type": "10-K",
+      "is_amendment": false,
+      "filing_date": "2025-02-21",
+      "report_date": "2024-12-31",
+      "primary_document": "synt-20241231.htm",
+      "primary_document_description": "10-K",
+      "document_url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990125000003/synt-20241231.htm",
+      "filing_index_url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990125000003/0009999901-25-000003-index.htm",
+      "source_response_url": "https://data.sec.gov/submissions/CIK0009999901.json",
+      "retrieved_at": "2026-10-01T21:54:45.554126Z",
+      "source_captured_at": "2026-10-01T00:00:00Z",
+      "data_mode": "synthetic",
+      "note": "Filing metadata only. The document has not been read and does not by itself support or refute the claim."
+    },
+    {
+      "provider_id": "sec_edgar_submissions",
+      "ticker": "SYNT",
+      "cik": "0009999901",
+      "company_name": "Synthetic Example Corp (fictional)",
+      "accession_number": "0009999901-24-000001",
+      "form_type": "10-K",
+      "is_amendment": false,
+      "filing_date": "2024-02-23",
+      "report_date": "2023-12-31",
+      "primary_document": "synt-20231231.htm",
+      "primary_document_description": "10-K",
+      "document_url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990124000001/synt-20231231.htm",
+      "filing_index_url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990124000001/0009999901-24-000001-index.htm",
+      "source_response_url": "https://data.sec.gov/submissions/CIK0009999901.json",
+      "retrieved_at": "2026-10-01T21:54:45.554126Z",
+      "source_captured_at": "2026-10-01T00:00:00Z",
+      "data_mode": "synthetic",
+      "note": "Filing metadata only. The document has not been read and does not by itself support or refute the claim."
+    }
+  ],
+  "coverage": {
+    "requested_since": "2024-01-01",
+    "recent_earliest_filing_date": "2024-02-23",
+    "recent_latest_filing_date": "2026-08-05",
+    "recent_row_count": 13,
+    "coverage_gap": true,
+    "older_files": [
+      {
+        "name": "CIK0009999901-submissions-001.json",
+        "filing_from": "2012-03-01",
+        "filing_to": "2024-01-31",
+        "filing_count": 120,
+        "url": "https://data.sec.gov/submissions/CIK0009999901-submissions-001.json"
+      }
+    ],
+    "message": "Coverage gap: the requested window starts 2024-01-01, but the parsed recent block covers 2024-02-23 to 2026-08-05. SEC lists 1 older submission file(s) that were not fetched, so filings before 2024-02-23 were not checked.",
+    "message_zh": "覆盖缺口：检索起始日为 2024-01-01，但已解析的近期记录只覆盖 2024-02-23 至 2026-08-05。SEC 另列有 1 个更早的申报文件未读取，因此 2024-02-23 之前的申报没有检查。"
+  },
+  "reported_facts": {
+    "provider_id": "sec_xbrl_companyfacts",
+    "ticker": "SYNT",
+    "cik": "0009999901",
+    "company_name": "Synthetic Example Corp (fictional)",
+    "revenue": [
+      {
+        "period_start": "2021-01-01",
+        "period_end": "2021-12-31",
+        "value": "120000000",
+        "unit": "USD",
+        "concept": "RevenueFromContractWithCustomerExcludingAssessedTax",
+        "form": "10-K",
+        "accession": "0009999901-23-000090",
+        "filed": "2023-02-24",
+        "fiscal_year": 2022,
+        "fiscal_period": "FY"
+      },
+      {
+        "period_start": "2022-01-01",
+        "period_end": "2022-12-31",
+        "value": "140000000",
+        "unit": "USD",
+        "concept": "RevenueFromContractWithCustomerExcludingAssessedTax",
+        "form": "10-K",
+        "accession": "0009999901-24-000001",
+        "filed": "2024-02-23",
+        "fiscal_year": 2023,
+        "fiscal_period": "FY"
+      },
+      {
+        "period_start": "2023-01-01",
+        "period_end": "2023-12-31",
+        "value": "160000000",
+        "unit": "USD",
+        "concept": "RevenueFromContractWithCustomerExcludingAssessedTax",
+        "form": "10-K",
+        "accession": "0009999901-25-000003",
+        "filed": "2025-02-21",
+        "fiscal_year": 2024,
+        "fiscal_period": "FY"
+      },
+      {
+        "period_start": "2024-01-01",
+        "period_end": "2024-12-31",
+        "value": "180000000",
+        "unit": "USD",
+        "concept": "RevenueFromContractWithCustomerExcludingAssessedTax",
+        "form": "10-K",
+        "accession": "0009999901-26-000008",
+        "filed": "2026-02-20",
+        "fiscal_year": 2025,
+        "fiscal_period": "FY"
+      },
+      {
+        "period_start": "2025-01-01",
+        "period_end": "2025-12-31",
+        "value": "200000000",
+        "unit": "USD",
+        "concept": "RevenueFromContractWithCustomerExcludingAssessedTax",
+        "form": "10-K",
+        "accession": "0009999901-26-000008",
+        "filed": "2026-02-20",
+        "fiscal_year": 2025,
+        "fiscal_period": "FY"
+      }
+    ],
+    "net_income": [
+      {
+        "period_start": "2021-01-01",
+        "period_end": "2021-12-31",
+        "value": "22000000",
+        "unit": "USD",
+        "concept": "NetIncomeLoss",
+        "form": "10-K",
+        "accession": "0009999901-23-000090",
+        "filed": "2023-02-24",
+        "fiscal_year": 2022,
+        "fiscal_period": "FY"
+      },
+      {
+        "period_start": "2022-01-01",
+        "period_end": "2022-12-31",
+        "value": "28000000",
+        "unit": "USD",
+        "concept": "NetIncomeLoss",
+        "form": "10-K",
+        "accession": "0009999901-24-000001",
+        "filed": "2024-02-23",
+        "fiscal_year": 2023,
+        "fiscal_period": "FY"
+      },
+      {
+        "period_start": "2023-01-01",
+        "period_end": "2023-12-31",
+        "value": "32000000",
+        "unit": "USD",
+        "concept": "NetIncomeLoss",
+        "form": "10-K",
+        "accession": "0009999901-25-000003",
+        "filed": "2025-02-21",
+        "fiscal_year": 2024,
+        "fiscal_period": "FY"
+      },
+      {
+        "period_start": "2024-01-01",
+        "period_end": "2024-12-31",
+        "value": "36000000",
+        "unit": "USD",
+        "concept": "NetIncomeLoss",
+        "form": "10-K",
+        "accession": "0009999901-26-000008",
+        "filed": "2026-02-20",
+        "fiscal_year": 2025,
+        "fiscal_period": "FY"
+      },
+      {
+        "period_start": "2025-01-01",
+        "period_end": "2025-12-31",
+        "value": "40000000",
+        "unit": "USD",
+        "concept": "NetIncomeLoss",
+        "form": "10-K",
+        "accession": "0009999901-26-000008",
+        "filed": "2026-02-20",
+        "fiscal_year": 2025,
+        "fiscal_period": "FY"
+      }
+    ],
+    "shares_outstanding": [
+      {
+        "period_start": null,
+        "period_end": "2023-07-28",
+        "value": "92100000",
+        "unit": "shares",
+        "concept": "dei:EntityCommonStockSharesOutstanding",
+        "form": "10-Q",
+        "accession": "0009999901-23-000150",
+        "filed": "2023-08-01",
+        "fiscal_year": 2023,
+        "fiscal_period": "Q2"
+      },
+      {
+        "period_start": null,
+        "period_end": "2024-07-26",
+        "value": "93500000",
+        "unit": "shares",
+        "concept": "dei:EntityCommonStockSharesOutstanding",
+        "form": "10-Q",
+        "accession": "0009999901-24-000150",
+        "filed": "2024-08-01",
+        "fiscal_year": 2024,
+        "fiscal_period": "Q2"
+      },
+      {
+        "period_start": null,
+        "period_end": "2025-07-25",
+        "value": "94200000",
+        "unit": "shares",
+        "concept": "dei:EntityCommonStockSharesOutstanding",
+        "form": "10-Q",
+        "accession": "0009999901-25-000006",
+        "filed": "2025-08-01",
+        "fiscal_year": 2025,
+        "fiscal_period": "Q2"
+      },
+      {
+        "period_start": null,
+        "period_end": "2026-01-30",
+        "value": "94600000",
+        "unit": "shares",
+        "concept": "dei:EntityCommonStockSharesOutstanding",
+        "form": "10-K",
+        "accession": "0009999901-26-000008",
+        "filed": "2026-02-20",
+        "fiscal_year": 2026,
+        "fiscal_period": "FY"
+      },
+      {
+        "period_start": null,
+        "period_end": "2026-07-24",
+        "value": "95000000",
+        "unit": "shares",
+        "concept": "dei:EntityCommonStockSharesOutstanding",
+        "form": "10-Q",
+        "accession": "0009999901-26-000012",
+        "filed": "2026-08-01",
+        "fiscal_year": 2026,
+        "fiscal_period": "Q2"
+      }
+    ],
+    "source_url": "https://data.sec.gov/api/xbrl/companyfacts/CIK0009999901.json",
+    "retrieved_at": "2026-10-01T21:54:45.554461Z",
+    "source_captured_at": "2026-10-01T00:00:00Z",
+    "data_mode": "synthetic",
+    "notes": []
+  },
+  "market": {
+    "provider_id": "yahoo_finance_chart",
+    "symbol": "SYNT",
+    "currency": "USD",
+    "last_close": "50",
+    "last_date": "2026-09-30",
+    "history_start": "2021-10-01",
+    "observations": 1304,
+    "annualized_volatility": "0.351718",
+    "volatility_window": "daily log returns of adjusted close, 2021-10-01 to 2026-09-30 (1303 returns)",
+    "price_series": [
+      {
+        "day": "2021-10-01",
+        "close": "27.5259"
+      },
+      {
+        "day": "2021-10-08",
+        "close": "28.0962"
+      },
+      {
+        "day": "2021-10-15",
+        "close": "28.277"
+      },
+      {
+        "day": "2021-10-22",
+        "close": "28.327"
+      },
+      {
+        "day": "2021-10-29",
+        "close": "29.8766"
+      },
+      {
+        "day": "2021-11-05",
+        "close": "29.427"
+      },
+      {
+        "day": "2021-11-12",
+        "close": "29.0289"
+      },
+      {
+        "day": "2021-11-19",
+        "close": "31.2756"
+      },
+      {
+        "day": "2021-11-26",
+        "close": "32.5086"
+      },
+      {
+        "day": "2021-12-03",
+        "close": "32.6023"
+      },
+      {
+        "day": "2021-12-10",
+        "close": "32.1942"
+      },
+      {
+        "day": "2021-12-17",
+        "close": "29.248"
+      },
+      {
+        "day": "2021-12-24",
+        "close": "31.207"
+      },
+      {
+        "day": "2021-12-31",
+        "close": "28.959"
+      },
+      {
+        "day": "2022-01-07",
+        "close": "27.9957"
+      },
+      {
+        "day": "2022-01-14",
+        "close": "29.4965"
+      },
+      {
+        "day": "2022-01-21",
+        "close": "30.8073"
+      },
+      {
+        "day": "2022-01-28",
+        "close": "29.8678"
+      },
+      {
+        "day": "2022-02-04",
+        "close": "27.4992"
+      },
+      {
+        "day": "2022-02-11",
+        "close": "26.5449"
+      },
+      {
+        "day": "2022-02-18",
+        "close": "26.773"
+      },
+      {
+        "day": "2022-02-25",
+        "close": "26.4755"
+      },
+      {
+        "day": "2022-03-04",
+        "close": "25.5549"
+      },
+      {
+        "day": "2022-03-11",
+        "close": "25.7314"
+      },
+      {
+        "day": "2022-03-18",
+        "close": "24.8826"
+      },
+      {
+        "day": "2022-03-25",
+        "close": "26.2336"
+      },
+      {
+        "day": "2022-04-01",
+        "close": "29.9435"
+      },
+      {
+        "day": "2022-04-08",
+        "close": "31.0552"
+      },
+      {
+        "day": "2022-04-15",
+        "close": "28.6"
+      },
+      {
+        "day": "2022-04-22",
+        "close": "31.2295"
+      },
+      {
+        "day": "2022-04-29",
+        "close": "34.3731"
+      },
+      {
+        "day": "2022-05-06",
+        "close": "33.6735"
+      },
+      {
+        "day": "2022-05-13",
+        "close": "32.3808"
+      },
+      {
+        "day": "2022-05-20",
+        "close": "32.6417"
+      },
+      {
+        "day": "2022-05-27",
+        "close": "32.648"
+      },
+      {
+        "day": "2022-06-03",
+        "close": "34.117"
+      },
+      {
+        "day": "2022-06-10",
+        "close": "35.1259"
+      },
+      {
+        "day": "2022-06-17",
+        "close": "34.6802"
+      },
+      {
+        "day": "2022-06-24",
+        "close": "35.608"
+      },
+      {
+        "day": "2022-07-01",
+        "close": "34.809"
+      },
+      {
+        "day": "2022-07-08",
+        "close": "31.1794"
+      },
+      {
+        "day": "2022-07-15",
+        "close": "32.5681"
+      },
+      {
+        "day": "2022-07-22",
+        "close": "31.7507"
+      },
+      {
+        "day": "2022-07-29",
+        "close": "29.7393"
+      },
+      {
+        "day": "2022-08-05",
+        "close": "28.145"
+      },
+      {
+        "day": "2022-08-12",
+        "close": "27.919"
+      },
+      {
+        "day": "2022-08-19",
+        "close": "28.0612"
+      },
+      {
+        "day": "2022-08-26",
+        "close": "27.8877"
+      },
+      {
+        "day": "2022-09-02",
+        "close": "28.9445"
+      },
+      {
+        "day": "2022-09-09",
+        "close": "30.6549"
+      },
+      {
+        "day": "2022-09-16",
+        "close": "32.8348"
+      },
+      {
+        "day": "2022-09-23",
+        "close": "32.4497"
+      },
+      {
+        "day": "2022-09-30",
+        "close": "36.0451"
+      },
+      {
+        "day": "2022-10-07",
+        "close": "36.0859"
+      },
+      {
+        "day": "2022-10-14",
+        "close": "38.8694"
+      },
+      {
+        "day": "2022-10-21",
+        "close": "45.433"
+      },
+      {
+        "day": "2022-10-28",
+        "close": "45.566"
+      },
+      {
+        "day": "2022-11-04",
+        "close": "44.6426"
+      },
+      {
+        "day": "2022-11-11",
+        "close": "47.2491"
+      },
+      {
+        "day": "2022-11-18",
+        "close": "42.6309"
+      },
+      {
+        "day": "2022-11-25",
+        "close": "41.3151"
+      },
+      {
+        "day": "2022-12-02",
+        "close": "41.6905"
+      },
+      {
+        "day": "2022-12-09",
+        "close": "40.3723"
+      },
+      {
+        "day": "2022-12-16",
+        "close": "41.7979"
+      },
+      {
+        "day": "2022-12-23",
+        "close": "45.0608"
+      },
+      {
+        "day": "2022-12-30",
+        "close": "46.7819"
+      },
+      {
+        "day": "2023-01-06",
+        "close": "42.5315"
+      },
+      {
+        "day": "2023-01-13",
+        "close": "44.2849"
+      },
+      {
+        "day": "2023-01-20",
+        "close": "41.8802"
+      },
+      {
+        "day": "2023-01-27",
+        "close": "40.6093"
+      },
+      {
+        "day": "2023-02-03",
+        "close": "41.1451"
+      },
+      {
+        "day": "2023-02-10",
+        "close": "38.765"
+      },
+      {
+        "day": "2023-02-17",
+        "close": "38.0096"
+      },
+      {
+        "day": "2023-02-24",
+        "close": "38.6219"
+      },
+      {
+        "day": "2023-03-03",
+        "close": "38.0775"
+      },
+      {
+        "day": "2023-03-10",
+        "close": "36.1378"
+      },
+      {
+        "day": "2023-03-17",
+        "close": "36.2563"
+      },
+      {
+        "day": "2023-03-24",
+        "close": "36.8476"
+      },
+      {
+        "day": "2023-03-31",
+        "close": "37.4396"
+      },
+      {
+        "day": "2023-04-07",
+        "close": "38.242"
+      },
+      {
+        "day": "2023-04-14",
+        "close": "36.9161"
+      },
+      {
+        "day": "2023-04-21",
+        "close": "37.5602"
+      },
+      {
+        "day": "2023-04-28",
+        "close": "38.3251"
+      },
+      {
+        "day": "2023-05-05",
+        "close": "41.1787"
+      },
+      {
+        "day": "2023-05-12",
+        "close": "41.1679"
+      },
+      {
+        "day": "2023-05-19",
+        "close": "41.3834"
+      },
+      {
+        "day": "2023-05-26",
+        "close": "42.3814"
+      },
+      {
+        "day": "2023-06-02",
+        "close": "45.9461"
+      },
+      {
+        "day": "2023-06-09",
+        "close": "44.3193"
+      },
+      {
+        "day": "2023-06-16",
+        "close": "43.8844"
+      },
+      {
+        "day": "2023-06-23",
+        "close": "45.4655"
+      },
+      {
+        "day": "2023-06-30",
+        "close": "47.7607"
+      },
+      {
+        "day": "2023-07-07",
+        "close": "45.9647"
+      },
+      {
+        "day": "2023-07-14",
+        "close": "41.3128"
+      },
+      {
+        "day": "2023-07-21",
+        "close": "44.6669"
+      },
+      {
+        "day": "2023-07-28",
+        "close": "42.8488"
+      },
+      {
+        "day": "2023-08-04",
+        "close": "40.6296"
+      },
+      {
+        "day": "2023-08-11",
+        "close": "37.9578"
+      },
+      {
+        "day": "2023-08-18",
+        "close": "34.4804"
+      },
+      {
+        "day": "2023-08-25",
+        "close": "33.9562"
+      },
+      {
+        "day": "2023-09-01",
+        "close": "33.9397"
+      },
+      {
+        "day": "2023-09-08",
+        "close": "33.9581"
+      },
+      {
+        "day": "2023-09-15",
+        "close": "34.1756"
+      },
+      {
+        "day": "2023-09-22",
+        "close": "33.7695"
+      },
+      {
+        "day": "2023-09-29",
+        "close": "35.6487"
+      },
+      {
+        "day": "2023-10-06",
+        "close": "35.2814"
+      },
+      {
+        "day": "2023-10-13",
+        "close": "32.8839"
+      },
+      {
+        "day": "2023-10-20",
+        "close": "31.3468"
+      },
+      {
+        "day": "2023-10-27",
+        "close": "32.7841"
+      },
+      {
+        "day": "2023-11-03",
+        "close": "30.6611"
+      },
+      {
+        "day": "2023-11-10",
+        "close": "30.2539"
+      },
+      {
+        "day": "2023-11-17",
+        "close": "32.1652"
+      },
+      {
+        "day": "2023-11-24",
+        "close": "30.5629"
+      },
+      {
+        "day": "2023-12-01",
+        "close": "35.1432"
+      },
+      {
+        "day": "2023-12-08",
+        "close": "34.6212"
+      },
+      {
+        "day": "2023-12-15",
+        "close": "38.3835"
+      },
+      {
+        "day": "2023-12-22",
+        "close": "36.1734"
+      },
+      {
+        "day": "2023-12-29",
+        "close": "37.4587"
+      },
+      {
+        "day": "2024-01-05",
+        "close": "36.7622"
+      },
+      {
+        "day": "2024-01-12",
+        "close": "38.1658"
+      },
+      {
+        "day": "2024-01-19",
+        "close": "35.5767"
+      },
+      {
+        "day": "2024-01-26",
+        "close": "34.1829"
+      },
+      {
+        "day": "2024-02-02",
+        "close": "32.3626"
+      },
+      {
+        "day": "2024-02-09",
+        "close": "33.4243"
+      },
+      {
+        "day": "2024-02-16",
+        "close": "34.5448"
+      },
+      {
+        "day": "2024-02-23",
+        "close": "33.7817"
+      },
+      {
+        "day": "2024-03-01",
+        "close": "34.9323"
+      },
+      {
+        "day": "2024-03-08",
+        "close": "32.0859"
+      },
+      {
+        "day": "2024-03-15",
+        "close": "33.9082"
+      },
+      {
+        "day": "2024-03-22",
+        "close": "36.2049"
+      },
+      {
+        "day": "2024-03-29",
+        "close": "38.1886"
+      },
+      {
+        "day": "2024-04-05",
+        "close": "37.6089"
+      },
+      {
+        "day": "2024-04-12",
+        "close": "36.2273"
+      },
+      {
+        "day": "2024-04-19",
+        "close": "35.2449"
+      },
+      {
+        "day": "2024-04-26",
+        "close": "36.6638"
+      },
+      {
+        "day": "2024-05-03",
+        "close": "34.6721"
+      },
+      {
+        "day": "2024-05-10",
+        "close": "35.9997"
+      },
+      {
+        "day": "2024-05-17",
+        "close": "31.7446"
+      },
+      {
+        "day": "2024-05-24",
+        "close": "30.4672"
+      },
+      {
+        "day": "2024-05-31",
+        "close": "30.5435"
+      },
+      {
+        "day": "2024-06-07",
+        "close": "29.6898"
+      },
+      {
+        "day": "2024-06-14",
+        "close": "29.0293"
+      },
+      {
+        "day": "2024-06-21",
+        "close": "29.1618"
+      },
+      {
+        "day": "2024-06-28",
+        "close": "30.4517"
+      },
+      {
+        "day": "2024-07-05",
+        "close": "30.9372"
+      },
+      {
+        "day": "2024-07-12",
+        "close": "31.0381"
+      },
+      {
+        "day": "2024-07-19",
+        "close": "30.9578"
+      },
+      {
+        "day": "2024-07-26",
+        "close": "29.043"
+      },
+      {
+        "day": "2024-08-02",
+        "close": "28.9342"
+      },
+      {
+        "day": "2024-08-09",
+        "close": "29.9255"
+      },
+      {
+        "day": "2024-08-16",
+        "close": "31.968"
+      },
+      {
+        "day": "2024-08-23",
+        "close": "33.3849"
+      },
+      {
+        "day": "2024-08-30",
+        "close": "38.3683"
+      },
+      {
+        "day": "2024-09-06",
+        "close": "37.4956"
+      },
+      {
+        "day": "2024-09-13",
+        "close": "39.832"
+      },
+      {
+        "day": "2024-09-20",
+        "close": "41.8507"
+      },
+      {
+        "day": "2024-09-27",
+        "close": "39.4164"
+      },
+      {
+        "day": "2024-10-04",
+        "close": "39.8324"
+      },
+      {
+        "day": "2024-10-11",
+        "close": "36.3114"
+      },
+      {
+        "day": "2024-10-18",
+        "close": "39.2913"
+      },
+      {
+        "day": "2024-10-25",
+        "close": "37.9558"
+      },
+      {
+        "day": "2024-11-01",
+        "close": "39.3799"
+      },
+      {
+        "day": "2024-11-08",
+        "close": "39.2301"
+      },
+      {
+        "day": "2024-11-15",
+        "close": "37.8267"
+      },
+      {
+        "day": "2024-11-22",
+        "close": "37.4832"
+      },
+      {
+        "day": "2024-11-29",
+        "close": "37.7558"
+      },
+      {
+        "day": "2024-12-06",
+        "close": "35.7727"
+      },
+      {
+        "day": "2024-12-13",
+        "close": "37.0031"
+      },
+      {
+        "day": "2024-12-20",
+        "close": "36.1829"
+      },
+      {
+        "day": "2024-12-27",
+        "close": "34.6832"
+      },
+      {
+        "day": "2025-01-03",
+        "close": "34.1377"
+      },
+      {
+        "day": "2025-01-10",
+        "close": "35.1293"
+      },
+      {
+        "day": "2025-01-17",
+        "close": "35.1183"
+      },
+      {
+        "day": "2025-01-24",
+        "close": "34.5173"
+      },
+      {
+        "day": "2025-01-31",
+        "close": "34.709"
+      },
+      {
+        "day": "2025-02-07",
+        "close": "34.3643"
+      },
+      {
+        "day": "2025-02-14",
+        "close": "36.1978"
+      },
+      {
+        "day": "2025-02-21",
+        "close": "37.3178"
+      },
+      {
+        "day": "2025-02-28",
+        "close": "38.3073"
+      },
+      {
+        "day": "2025-03-07",
+        "close": "41.0495"
+      },
+      {
+        "day": "2025-03-14",
+        "close": "41.7982"
+      },
+      {
+        "day": "2025-03-21",
+        "close": "41.5576"
+      },
+      {
+        "day": "2025-03-28",
+        "close": "42.4311"
+      },
+      {
+        "day": "2025-04-04",
+        "close": "40.3944"
+      },
+      {
+        "day": "2025-04-11",
+        "close": "43.6836"
+      },
+      {
+        "day": "2025-04-18",
+        "close": "44.7533"
+      },
+      {
+        "day": "2025-04-25",
+        "close": "46.4459"
+      },
+      {
+        "day": "2025-05-02",
+        "close": "48.2892"
+      },
+      {
+        "day": "2025-05-09",
+        "close": "48.6974"
+      },
+      {
+        "day": "2025-05-16",
+        "close": "44.7277"
+      },
+      {
+        "day": "2025-05-23",
+        "close": "48.3023"
+      },
+      {
+        "day": "2025-05-30",
+        "close": "48.5457"
+      },
+      {
+        "day": "2025-06-06",
+        "close": "48.0396"
+      },
+      {
+        "day": "2025-06-13",
+        "close": "51.3861"
+      },
+      {
+        "day": "2025-06-20",
+        "close": "47.9931"
+      },
+      {
+        "day": "2025-06-27",
+        "close": "48.5148"
+      },
+      {
+        "day": "2025-07-04",
+        "close": "48.4871"
+      },
+      {
+        "day": "2025-07-11",
+        "close": "47.7678"
+      },
+      {
+        "day": "2025-07-18",
+        "close": "48.2923"
+      },
+      {
+        "day": "2025-07-25",
+        "close": "47.9389"
+      },
+      {
+        "day": "2025-08-01",
+        "close": "48.2018"
+      },
+      {
+        "day": "2025-08-08",
+        "close": "51.2144"
+      },
+      {
+        "day": "2025-08-15",
+        "close": "47.3655"
+      },
+      {
+        "day": "2025-08-22",
+        "close": "46.4048"
+      },
+      {
+        "day": "2025-08-29",
+        "close": "45.7818"
+      },
+      {
+        "day": "2025-09-05",
+        "close": "49.2543"
+      },
+      {
+        "day": "2025-09-12",
+        "close": "49.7063"
+      },
+      {
+        "day": "2025-09-19",
+        "close": "50.2009"
+      },
+      {
+        "day": "2025-09-26",
+        "close": "50.7084"
+      },
+      {
+        "day": "2025-10-03",
+        "close": "54.5519"
+      },
+      {
+        "day": "2025-10-10",
+        "close": "55.5188"
+      },
+      {
+        "day": "2025-10-17",
+        "close": "54.9807"
+      },
+      {
+        "day": "2025-10-24",
+        "close": "56.4782"
+      },
+      {
+        "day": "2025-10-31",
+        "close": "55.2756"
+      },
+      {
+        "day": "2025-11-07",
+        "close": "52.9899"
+      },
+      {
+        "day": "2025-11-14",
+        "close": "59.6581"
+      },
+      {
+        "day": "2025-11-21",
+        "close": "61.7329"
+      },
+      {
+        "day": "2025-11-28",
+        "close": "62.4561"
+      },
+      {
+        "day": "2025-12-05",
+        "close": "56.3833"
+      },
+      {
+        "day": "2025-12-12",
+        "close": "54.8448"
+      },
+      {
+        "day": "2025-12-19",
+        "close": "57.014"
+      },
+      {
+        "day": "2025-12-26",
+        "close": "54.5319"
+      },
+      {
+        "day": "2026-01-02",
+        "close": "56.0142"
+      },
+      {
+        "day": "2026-01-09",
+        "close": "60.8085"
+      },
+      {
+        "day": "2026-01-16",
+        "close": "68.4477"
+      },
+      {
+        "day": "2026-01-23",
+        "close": "65.3843"
+      },
+      {
+        "day": "2026-01-30",
+        "close": "64.3033"
+      },
+      {
+        "day": "2026-02-06",
+        "close": "62.1506"
+      },
+      {
+        "day": "2026-02-13",
+        "close": "65.7841"
+      },
+      {
+        "day": "2026-02-20",
+        "close": "60.9022"
+      },
+      {
+        "day": "2026-02-27",
+        "close": "57.6764"
+      },
+      {
+        "day": "2026-03-06",
+        "close": "54.4202"
+      },
+      {
+        "day": "2026-03-13",
+        "close": "56.6946"
+      },
+      {
+        "day": "2026-03-20",
+        "close": "62.0053"
+      },
+      {
+        "day": "2026-03-27",
+        "close": "63.4832"
+      },
+      {
+        "day": "2026-04-03",
+        "close": "67.0976"
+      },
+      {
+        "day": "2026-04-10",
+        "close": "62.5594"
+      },
+      {
+        "day": "2026-04-17",
+        "close": "62.0856"
+      },
+      {
+        "day": "2026-04-24",
+        "close": "58.6572"
+      },
+      {
+        "day": "2026-05-01",
+        "close": "57.6437"
+      },
+      {
+        "day": "2026-05-08",
+        "close": "52.2564"
+      },
+      {
+        "day": "2026-05-15",
+        "close": "52.9543"
+      },
+      {
+        "day": "2026-05-22",
+        "close": "50.2943"
+      },
+      {
+        "day": "2026-05-29",
+        "close": "53.0764"
+      },
+      {
+        "day": "2026-06-05",
+        "close": "51.7937"
+      },
+      {
+        "day": "2026-06-12",
+        "close": "49.9284"
+      },
+      {
+        "day": "2026-06-19",
+        "close": "49.3887"
+      },
+      {
+        "day": "2026-06-26",
+        "close": "50.6644"
+      },
+      {
+        "day": "2026-07-03",
+        "close": "47.7475"
+      },
+      {
+        "day": "2026-07-10",
+        "close": "48.7633"
+      },
+      {
+        "day": "2026-07-17",
+        "close": "51.9706"
+      },
+      {
+        "day": "2026-07-24",
+        "close": "55.3497"
+      },
+      {
+        "day": "2026-07-31",
+        "close": "53.017"
+      },
+      {
+        "day": "2026-08-07",
+        "close": "51.0834"
+      },
+      {
+        "day": "2026-08-14",
+        "close": "50.4167"
+      },
+      {
+        "day": "2026-08-21",
+        "close": "52.7991"
+      },
+      {
+        "day": "2026-08-28",
+        "close": "51.4856"
+      },
+      {
+        "day": "2026-09-04",
+        "close": "51.7961"
+      },
+      {
+        "day": "2026-09-11",
+        "close": "48.9704"
+      },
+      {
+        "day": "2026-09-18",
+        "close": "46.4373"
+      },
+      {
+        "day": "2026-09-25",
+        "close": "49.4119"
+      },
+      {
+        "day": "2026-09-30",
+        "close": "50"
+      }
+    ],
+    "source_url": "https://query1.finance.yahoo.com/v8/finance/chart/SYNT?range=5y&interval=1d",
+    "retrieved_at": "2026-10-01T21:54:45.555325Z",
+    "source_captured_at": "2026-10-01T00:00:00Z",
+    "data_mode": "synthetic",
+    "note": "Unofficial public quote endpoint; no service guarantee. Prices are as published by the source."
+  },
+  "evidence_items": [
+    {
+      "id": "E1",
+      "check": "metric_growth",
+      "stance": "neutral",
+      "title": "Required revenue growth vs reported history",
+      "detail": "the claim needs revenue to grow 12.82% per year from 200.00M (FY ending 2025-12-31) to 400.00M by about 2031-09-30 (5.75 years); reported growth was 12.62% per year (2022–2025)",
+      "title_zh": "所需营收增速 vs 已披露增速",
+      "detail_zh": "观点要求营收从 2.00 亿（截至 2025-12-31 的财年）在约 5.75 年内（到 2031-09-30 前后）增长到 4.00 亿，即每年 12.82%；已披露增速为每年 12.62%（2022–2025）",
+      "measured": {
+        "required_annual_revenue": "400000000",
+        "latest_reported_annual_revenue": "200000000",
+        "latest_period_end": "2025-12-31",
+        "years_from_period_end_to_target": "5.7474",
+        "required_cagr_from_reported": "0.128174873491700421736314310547506",
+        "reported_cagr": "0.126217337640027395647100187120221",
+        "reported_window": "2022-12-31 to 2025-12-31",
+        "gap": "0.001957535851673026089214123427285"
+      },
+      "rule": "supporting if required CAGR <= reported CAGR; neutral if gap <= 5.00 pp; contrary otherwise",
+      "rule_zh": "所需年增速不高于已披露增速为支持；差距不超过 5.00 pp 为背景；否则为反对",
+      "sources": [
+        {
+          "label": "latest annual revenue: RevenueFromContractWithCustomerExcludingAssessedTax, FY ending 2025-12-31, 10-K filed 2026-02-20",
+          "url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990126000008/0009999901-26-000008-index.htm",
+          "filed": "2026-02-20",
+          "accession": "0009999901-26-000008",
+          "data_mode": "synthetic"
+        },
+        {
+          "label": "earlier annual revenue: RevenueFromContractWithCustomerExcludingAssessedTax, FY ending 2022-12-31, 10-K filed 2024-02-23",
+          "url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990124000001/0009999901-24-000001-index.htm",
+          "filed": "2024-02-23",
+          "accession": "0009999901-24-000001",
+          "data_mode": "synthetic"
+        }
+      ],
+      "as_of": "2026-02-20"
+    },
+    {
+      "id": "E2",
+      "check": "valuation_multiple",
+      "stance": "neutral",
+      "title": "Assumed P/S vs today's P/S",
+      "detail": "the claim assumes P/S 25 at the target date; today's P/S is 23.75 (market value 4.75B / revenue 200.00M), so the assumption is 1.05x today's level",
+      "title_zh": "假设 P/S vs 当前 P/S",
+      "detail_zh": "观点假设目标日 P/S 为 25；当前 P/S 为 23.75（市值 47.50 亿 / 营收 2.00 亿），假设是当前的 1.05 倍",
+      "measured": {
+        "last_close": "50",
+        "shares": "95000000",
+        "current_market_cap": "4750000000",
+        "latest_reported_annual_revenue": "200000000",
+        "assumed_multiple": "25",
+        "current_multiple": "23.75",
+        "assumed_over_current": "1.052631578947368421052631578947368"
+      },
+      "rule": "supporting if assumed <= current; neutral if assumed <= 1.25x current; contrary otherwise",
+      "rule_zh": "假设倍数不高于当前为支持；不超过当前的 1.25 倍为背景；否则为反对",
+      "sources": [
+        {
+          "label": "close 50 on 2026-09-30 (yahoo_finance_chart)",
+          "url": "https://query1.finance.yahoo.com/v8/finance/chart/SYNT?range=5y&interval=1d",
+          "filed": null,
+          "accession": null,
+          "data_mode": "synthetic"
+        },
+        {
+          "label": "latest annual revenue: RevenueFromContractWithCustomerExcludingAssessedTax, FY ending 2025-12-31, 10-K filed 2026-02-20",
+          "url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990126000008/0009999901-26-000008-index.htm",
+          "filed": "2026-02-20",
+          "accession": "0009999901-26-000008",
+          "data_mode": "synthetic"
+        },
+        {
+          "label": "shares outstanding: dei:EntityCommonStockSharesOutstanding, as of 2026-07-24, 10-Q filed 2026-08-01",
+          "url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990126000012/0009999901-26-000012-index.htm",
+          "filed": "2026-08-01",
+          "accession": "0009999901-26-000012",
+          "data_mode": "synthetic"
+        }
+      ],
+      "as_of": "2026-09-30"
+    },
+    {
+      "id": "E3",
+      "check": "share_count",
+      "stance": "supporting",
+      "title": "Assumed target share count vs reported share trend",
+      "detail": "going from 95.00M reported shares to the assumed 100.00M means 0.99% per year; the reported count changed 1.04% per year (2023-07-28 to 2026-07-24)",
+      "title_zh": "假设目标股份数 vs 已披露股份变化",
+      "detail_zh": "从已披露的 9,500 万 股到假设的 1.00 亿 股，即每年 0.99%；已披露股份数每年变化 1.04%（2023-07-28 至 2026-07-24）",
+      "measured": {
+        "reported_shares": "95000000",
+        "reported_as_of": "2026-07-24",
+        "target_assumed_shares": "100000000",
+        "implied_annual_change": "0.009939463961262622513892943452546",
+        "years_to_target": "5.1862",
+        "reported_annual_change": "0.010423419629615349536428974784180",
+        "reported_window": "2023-07-28 to 2026-07-24"
+      },
+      "rule": "supporting if implied annual change >= reported change -1.00 pp; neutral if >= reported change -3.00 pp; contrary otherwise",
+      "rule_zh": "隐含年变化不低于已披露变化 -1.00 pp 为支持；不低于 -3.00 pp 为背景；否则为反对",
+      "sources": [
+        {
+          "label": "shares outstanding: dei:EntityCommonStockSharesOutstanding, as of 2026-07-24, 10-Q filed 2026-08-01",
+          "url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990126000012/0009999901-26-000012-index.htm",
+          "filed": "2026-08-01",
+          "accession": "0009999901-26-000012",
+          "data_mode": "synthetic"
+        },
+        {
+          "label": "earlier shares outstanding: dei:EntityCommonStockSharesOutstanding, as of 2023-07-28, 10-Q filed 2023-08-01",
+          "url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990123000150/0009999901-23-000150-index.htm",
+          "filed": "2023-08-01",
+          "accession": "0009999901-23-000150",
+          "data_mode": "synthetic"
+        }
+      ],
+      "as_of": "2026-08-01"
+    },
+    {
+      "id": "E4",
+      "check": "profitability",
+      "stance": "neutral",
+      "title": "Reported profitability (context)",
+      "detail": "latest annual net income is 40.00M (FY ending 2025-12-31), i.e. a profit. A P/S target does not require profit, but losses can lead to financing and dilution.",
+      "title_zh": "已披露盈利情况（背景）",
+      "detail_zh": "最近年度净利润为 4,000 万（截至 2025-12-31 的财年），处于盈利。P/S 目标不要求盈利，但持续亏损可能带来融资和股份稀释。",
+      "measured": {
+        "latest_net_income": "40000000"
+      },
+      "rule": null,
+      "rule_zh": null,
+      "sources": [
+        {
+          "label": "latest annual net income: NetIncomeLoss, FY ending 2025-12-31, 10-K filed 2026-02-20",
+          "url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990126000008/0009999901-26-000008-index.htm",
+          "filed": "2026-02-20",
+          "accession": "0009999901-26-000008",
+          "data_mode": "synthetic"
+        }
+      ],
+      "as_of": "2026-02-20"
+    },
+    {
+      "id": "E5",
+      "check": "evidence_freshness",
+      "stance": "neutral",
+      "title": "Freshness of reported data",
+      "detail": "latest periodic report filed 2026-08-01 (61 days before this run)",
+      "title_zh": "已披露数据的新旧",
+      "detail_zh": "最近一份定期报告申报于 2026-08-01（本次运行前 61 天）",
+      "measured": {
+        "latest_periodic_filing": "2026-08-01",
+        "age_days": "61"
+      },
+      "rule": "missing if the latest 10-K/10-Q is older than 135 days",
+      "rule_zh": "最近一份 10-K/10-Q 超过 135 天视为缺失",
+      "sources": [
+        {
+          "label": "10-Q filed 2026-08-01",
+          "url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990126000012/0009999901-26-000012-index.htm",
+          "filed": "2026-08-01",
+          "accession": "0009999901-26-000012",
+          "data_mode": "synthetic"
+        }
+      ],
+      "as_of": "2026-08-01"
+    },
+    {
+      "id": "E6",
+      "check": "price_history",
+      "stance": "neutral",
+      "title": "Past price trend (context)",
+      "detail": "the closing price moved 12.69% per year from 2021-10-01 to 2026-09-30 (not dividend-adjusted); the claim requires 14.87% per year from the reference price",
+      "title_zh": "过去股价走势（背景）",
+      "detail_zh": "收盘价从 2021-10-01 到 2026-09-30 每年变化 12.69%（未计股息）；观点要求从参考价起每年 14.87%",
+      "measured": {
+        "past_annualized_price_change": "0.126889172469081680068385124593486",
+        "window": "2021-10-01 to 2026-09-30"
+      },
+      "rule": null,
+      "rule_zh": null,
+      "sources": [
+        {
+          "label": "daily closes (yahoo_finance_chart)",
+          "url": "https://query1.finance.yahoo.com/v8/finance/chart/SYNT?range=5y&interval=1d",
+          "filed": null,
+          "accession": null,
+          "data_mode": "synthetic"
+        }
+      ],
+      "as_of": "2026-09-30"
+    }
+  ],
+  "verdict": {
+    "label": "partially_supported",
+    "display": "Partially Supported",
+    "as_of": "2026-10-01",
+    "rationale": [
+      "Core check E1 is neutral: the claim needs revenue to grow 12.82% per year from 200.00M (FY ending 2025-12-31) to 400.00M by about 2031-09-30 (5.75 years); reported growth was 12.62% per year (2022–2025).",
+      "E3 is supporting: going from 95.00M reported shares to the assumed 100.00M means 0.99% per year; the reported count changed 1.04% per year (2023-07-28 to 2026-07-24)."
+    ],
+    "limitations": [
+      "Synthetic example data was used. This verdict demonstrates the rules and says nothing about a real company.",
+      "Evidence as of 2026-10-01. 'Partially Supported' describes the state of the evidence on that date. Not Supported Today does not mean the target price is impossible; Supported Today is not a guarantee.",
+      "Rules and thresholds are provisional (rules-v1); team validation of verdict thresholds is still open.",
+      "Checks use reported financial history and market prices only. Filing text, guidance and news are not read; AI-assisted analysis (OA.10–OA.12) is not implemented."
+    ],
+    "display_zh": "部分支持",
+    "rationale_zh": [
+      "核心检查 E1 为背景：观点要求营收从 2.00 亿（截至 2025-12-31 的财年）在约 5.75 年内（到 2031-09-30 前后）增长到 4.00 亿，即每年 12.82%；已披露增速为每年 12.62%（2022–2025）。",
+      "E3 为支持：从已披露的 9,500 万 股到假设的 1.00 亿 股，即每年 0.99%；已披露股份数每年变化 1.04%（2023-07-28 至 2026-07-24）。"
+    ],
+    "limitations_zh": [
+      "本次使用合成示例数据。这个结论只用来演示规则，与任何真实公司无关。",
+      "证据截至 2026-10-01。「部分支持」描述的是当日的证据状态。「目前证据不支持」不表示目标价不可能达到，「目前证据支持」也不是保证。",
+      "规则和阈值是临时的（rules-v1），判断阈值尚待团队验证。",
+      "检查只使用已披露的财务历史和市场价格，不读取申报正文、管理层指引和新闻；AI 辅助分析（OA.10–OA.12）尚未实现。"
+    ],
+    "basis": [
+      "E1",
+      "E2",
+      "E3",
+      "E4",
+      "E5",
+      "E6"
+    ],
+    "rules_version": "rules-v1 (provisional)"
+  },
+  "recheck_conditions": [
+    {
+      "id": "R1",
+      "trigger": "Next annual revenue is reported below 225.63M",
+      "watch": "10-K / XBRL company facts for the fiscal year after 2025-12-31",
+      "trigger_zh": "下一个年度营收低于 2.26 亿",
+      "watch_zh": "2025-12-31 之后财年的 10-K / XBRL 财务数据",
+      "threshold": "225634975 (12.82% above 200.00M)",
+      "linked_to": [
+        "E1",
+        "valuation_multiple",
+        "horizon_years"
+      ]
+    },
+    {
+      "id": "R2",
+      "trigger": "Shares outstanding rise above 95.94M within a year of 2026-07-24, or above 100.00M at any time",
+      "watch": "cover page of the next 10-Q / 10-K (dei:EntityCommonStockSharesOutstanding); S-1/S-3/424B offerings",
+      "trigger_zh": "2026-07-24 后一年内股份数超过 9,594 万，或任何时候超过 1.00 亿",
+      "watch_zh": "下一份 10-Q / 10-K 封面的股份数；S-1/S-3/424B 增发文件",
+      "threshold": "95944249",
+      "linked_to": [
+        "E3",
+        "target_assumed_shares"
+      ]
+    },
+    {
+      "id": "R3",
+      "trigger": "Today's P/S falls below 20.00 (the assumed 25 would then need more than 1.25x expansion)",
+      "watch": "price x shares / latest annual revenue; now 23.75",
+      "trigger_zh": "当前 P/S 跌破 20.00（届时假设的 25 需要超过 1.25 倍的估值扩张）",
+      "watch_zh": "股价 × 股份数 / 最近年度营收；当前 23.75",
+      "threshold": "20.00",
+      "linked_to": [
+        "E2",
+        "valuation_multiple"
+      ]
+    },
+    {
+      "id": "R4",
+      "trigger": "Next 10-Q or 10-K is filed (expected around 2026-10-31)",
+      "watch": "SEC EDGAR filings for the ticker",
+      "trigger_zh": "下一份 10-Q 或 10-K 发布（预计 2026-10-31 前后）",
+      "watch_zh": "该代码在 SEC EDGAR 的申报",
+      "threshold": null,
+      "linked_to": [
+        "E5"
+      ]
+    },
+    {
+      "id": "R9",
+      "trigger": "Any confirmed assumption changes (target price, horizon, multiple, target share count)",
+      "watch": "re-confirm the inputs and run the case again",
+      "trigger_zh": "任何已确认的假设发生变化（目标价、时间范围、估值倍数、目标股份数）",
+      "watch_zh": "重新确认输入并再次运行",
+      "threshold": null,
+      "linked_to": [
+        "target_price",
+        "horizon_years",
+        "valuation_multiple",
+        "target_assumed_shares"
+      ]
+    }
+  ],
+  "probability": {
+    "status": "ok",
+    "model": "lognormal (geometric Brownian motion), constant drift and volatility",
+    "spot": "50",
+    "drift": "0.07",
+    "volatility": "0.351718",
+    "volatility_source": "historical, daily log returns of adjusted close, 2021-10-01 to 2026-09-30 (1303 returns) (synthetic)",
+    "horizon_years": "5",
+    "target_price": "100",
+    "target_probability": 0.20339708745278506,
+    "median_price": "52.0789",
+    "p10_price": "19.0081",
+    "p90_price": "142.6872",
+    "points": [
+      {
+        "price": "12.5",
+        "probability_at_or_above": 0.9651985419476201
+      },
+      {
+        "price": "25.0",
+        "probability_at_or_above": 0.8246264899134016
+      },
+      {
+        "price": "37.5",
+        "probability_at_or_above": 0.6618756737210278
+      },
+      {
+        "price": "50.0",
+        "probability_at_or_above": 0.5206545617544512
+      },
+      {
+        "price": "62.5",
+        "probability_at_or_above": 0.40829494724007775
+      },
+      {
+        "price": "75.0",
+        "probability_at_or_above": 0.3214108485148485
+      },
+      {
+        "price": "100.0",
+        "probability_at_or_above": 0.20339708745278506
+      },
+      {
+        "price": "150.0",
+        "probability_at_or_above": 0.08929613990275988
+      },
+      {
+        "price": "200.0",
+        "probability_at_or_above": 0.04355041404570607
+      }
+    ],
+    "assumptions": [
+      "S_0 = confirmed reference price 50 on 2026-09-30",
+      "drift mu = 0.07 per year (user assumption)",
+      "volatility sigma = 0.351718 per year (historical, daily log returns of adjusted close, 2021-10-01 to 2026-09-30 (1303 returns) (synthetic))",
+      "T = 5 years (confirmed horizon)"
+    ],
+    "limitations": [
+      "Constant drift and volatility; real prices have jumps, fat tails and changing volatility.",
+      "Historical volatility describes the past window only; it is not a forecast.",
+      "Drift is your assumption. The result moves strongly with it.",
+      "Not market-implied: no option prices or prediction-market prices are used.",
+      "Shown as a reference next to the case. It does not change the verdict and is not a price prediction."
+    ],
+    "reason": null,
+    "assumptions_zh": [
+      "S_0 = 已确认参考价 50（2026-09-30）",
+      "漂移率 μ = 每年 0.07（你的假设）",
+      "波动率 σ = 每年 0.351718（历史波动率）",
+      "T = 5 年（已确认的时间范围）"
+    ],
+    "limitations_zh": [
+      "漂移率和波动率恒定；真实价格会跳空、有厚尾，波动率也会变化。",
+      "历史波动率只描述过去的区间，不是预测。",
+      "漂移率是你的假设，结果对它非常敏感。",
+      "不是市场隐含概率：没有使用期权价格或预测市场价格。",
+      "作为参考放在案例旁边，不改变结论，也不是价格预测。"
+    ],
+    "reason_zh": null
+  },
+  "sensitivity": {
+    "metric": "annual_revenue",
+    "base_value": "200000000",
+    "base_label": "reported FY ending 2025-12-31",
+    "multiples": [
+      "12.5",
+      "18.75",
+      "25",
+      "31.25",
+      "37.5",
+      "50"
+    ],
+    "horizons": [
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "10"
+    ],
+    "required_cagr": [
+      [
+        "0.447635738848886418299284341576749",
+        "0.339115385787058132873397052364031",
+        "0.272778545178014250934594978334674",
+        "0.228083799616884163401949484515675",
+        "0.195944146093451449542739872648406",
+        "0.137676941875190870352498806112664"
+      ],
+      [
+        "0.299180413330551043169586802157395",
+        "0.229493147935914197535505547797516",
+        "0.186081692707747146564853808387471",
+        "0.156459650672114467670992990178972",
+        "0.134963557321935265638292700656867",
+        "0.095555697359461464445950673764019"
+      ],
+      [
+        "0.203177351369650083765017264337311",
+        "0.157201532053539122375846722755313",
+        "0.128174873491700421736314310555916",
+        "0.108189424068324234159665326106817",
+        "0.093592312561427733056127580569469",
+        "0.066619398790023352701280006300473"
+      ],
+      [
+        "0.133624641500600067937705708911065",
+        "0.104068098654850764397788214813499",
+        "0.085212983201521388632407848242561",
+        "0.072140003852713269913812108953846",
+        "0.062543669374028800686708262448465",
+        "0.044702033639369763799647566092853"
+      ],
+      [
+        "0.079791280854493167527210309100511",
+        "0.062471068245207291163462441474134",
+        "0.051327875293681343051687904153515",
+        "0.043557739819049368852725268928776",
+        "0.037830592155139793071564736965673",
+        "0.027128982092641055039643479177994"
+      ],
+      [
+        "0",
+        "0",
+        "0",
+        "0",
+        "0",
+        "0"
+      ]
+    ],
+    "assumed_multiple": "25",
+    "assumed_horizon": "5",
+    "reported_cagr": "0.126217337640027395647100187120221"
+  },
+  "report": {
+    "headline": {
+      "en": "Probability that Synthetic Example Corp (fictional) is at or above 100 by about Sep 2031: about 15.7%–30.6%, unlikely. The business would need revenue growth of 12.8% a year; it has managed +12.6%. The 3 methods agree within a factor of 3: 15.7% to 30.6%.",
+      "zh": "Synthetic Example Corp (fictional) 到 2031 年 9 月前后达到 100 的概率约 15.7%–30.6%，属于「不太可能」。业绩上，营收需要每年增长 12.8%，过去是每年 +12.6%。3 种方法相差不到 3 倍：15.7% 到 30.6%。"
+    },
+    "verdict_meaning": {
+      "en": "Some evidence supports the claim and some does not: only part of what it needs is already happening.",
+      "zh": "有支持也有差距：观点需要的条件只有一部分已经在发生。"
+    },
+    "layers": [
+      {
+        "title": {
+          "en": "Layer 1 · Direct pricing (options and prediction markets)",
+          "zh": "第 1 层 · 直接定价信号（期权与预测市场）"
+        },
+        "rows": [
+          {
+            "signal": {
+              "en": "Option expiry used",
+              "zh": "使用的期权到期日"
+            },
+            "data": {
+              "en": "2028-12-15 (806 days)",
+              "zh": "2028-12-15（806 天）"
+            },
+            "meaning": {
+              "en": "the longest listed expiry",
+              "zh": "最远的上市到期日"
+            },
+            "tone": "neutral"
+          },
+          {
+            "signal": {
+              "en": "Implied volatility (at today's price)",
+              "zh": "隐含波动率（平值）"
+            },
+            "data": {
+              "en": "45% a year",
+              "zh": "每年 45%"
+            },
+            "meaning": {
+              "en": "how much movement traders pay for",
+              "zh": "交易者为多大的波动付费"
+            },
+            "tone": "neutral"
+          },
+          {
+            "signal": {
+              "en": "Highest strike listed",
+              "zh": "最高行权价"
+            },
+            "data": {
+              "en": "120.0",
+              "zh": "120.0"
+            },
+            "meaning": {
+              "en": "open interest at or above 100: 0 contracts — nobody holds a bet at the target",
+              "zh": "目标价 100 及以上的未平仓合约 0 张——没有人押注目标价"
+            },
+            "tone": "bad"
+          },
+          {
+            "signal": {
+              "en": "Option-implied probability",
+              "zh": "期权隐含概率"
+            },
+            "data": {
+              "en": "end above target 15.9%, touch 42.3%",
+              "zh": "到期高于目标 15.9%，期间触及 42.3%"
+            },
+            "meaning": {
+              "en": "touching is far likelier than staying there: a spike-and-fade path",
+              "zh": "触及远比守住容易：更像冲高后回落"
+            },
+            "tone": "neutral"
+          },
+          {
+            "signal": {
+              "en": "Polymarket",
+              "zh": "Polymarket"
+            },
+            "data": {
+              "en": "no open contract on this stock",
+              "zh": "没有这只股票的在售合约"
+            },
+            "meaning": {
+              "en": "no event market prices this claim",
+              "zh": "没有事件市场为这个观点定价"
+            },
+            "tone": "missing"
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Layer 2 · Base rates and peers",
+          "zh": "第 2 层 · 历史基准率与对标"
+        },
+        "rows": [
+          {
+            "signal": {
+              "en": "Similar-sized companies reaching 12.8% revenue growth",
+              "zh": "同规模公司达到每年 12.8% 营收增速"
+            },
+            "data": {
+              "en": "53 of 173 (30.6%), 2020–2025",
+              "zh": "173 家中 53 家（30.6%），2020–2025"
+            },
+            "meaning": {
+              "en": "median 5.7% a year; fastest: Synthetic Filer 193 (fictional) (48%/yr), Synthetic Filer 008 (fictional) (47%/yr), Synthetic Filer 044 (fictional) (38%/yr)",
+              "zh": "中位数每年 5.7%；最快的：Synthetic Filer 193 (fictional) (48%/yr), Synthetic Filer 008 (fictional) (47%/yr), Synthetic Filer 044 (fictional) (38%/yr)"
+            },
+            "tone": "good"
+          },
+          {
+            "signal": {
+              "en": "S&P 500 (SPY)",
+              "zh": "S&P 500 (SPY)"
+            },
+            "data": {
+              "en": "+139.6% (2021-10-29–2026-09-30)",
+              "zh": "+139.6%（2021-10-29–2026-09-30）"
+            },
+            "meaning": {
+              "en": "+19.4% a year; the claim needs 14.9% a year",
+              "zh": "每年 +19.4%；观点需要每年 14.9%"
+            },
+            "tone": "neutral"
+          },
+          {
+            "signal": {
+              "en": "Nasdaq-100 (QQQ)",
+              "zh": "Nasdaq-100 (QQQ)"
+            },
+            "data": {
+              "en": "+74.0% (2021-10-29–2026-09-30)",
+              "zh": "+74.0%（2021-10-29–2026-09-30）"
+            },
+            "meaning": {
+              "en": "+11.9% a year; the claim needs 14.9% a year",
+              "zh": "每年 +11.9%；观点需要每年 14.9%"
+            },
+            "tone": "neutral"
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Layer 3 · Fundamentals",
+          "zh": "第 3 层 · 基本面"
+        },
+        "rows": [
+          {
+            "signal": {
+              "en": "Share price",
+              "zh": "股价"
+            },
+            "data": {
+              "en": "50 → 100 (+100.0%)",
+              "zh": "50 → 100（+100.0%）"
+            },
+            "meaning": {
+              "en": "14.9% a year for 5 years; the stock moved +12.7% a year over the last 5 years",
+              "zh": "相当于 5 年里每年 14.9%；这只股票过去 5 年每年 +12.7%"
+            },
+            "tone": "neutral"
+          },
+          {
+            "signal": {
+              "en": "Company value",
+              "zh": "公司总市值"
+            },
+            "data": {
+              "en": "$4.75B today → $10.00B",
+              "zh": "今天 47.50 亿美元 → 100.00 亿美元"
+            },
+            "meaning": {
+              "en": "the whole company must be worth about 2.1x what the market pays today",
+              "zh": "整家公司的价值要变成今天的约 2.1 倍"
+            },
+            "tone": "neutral"
+          },
+          {
+            "signal": {
+              "en": "Needed revenue",
+              "zh": "需要的营收"
+            },
+            "data": {
+              "en": "$400.00M a year",
+              "zh": "每年 4.00 亿美元"
+            },
+            "meaning": {
+              "en": "about 2.0x the latest year ($200.00M), assuming P/S 25",
+              "zh": "是最近一年（2.00 亿美元）的约 2.0 倍，按 P/S 25 估值"
+            },
+            "tone": "neutral"
+          },
+          {
+            "signal": {
+              "en": "Needed revenue growth",
+              "zh": "需要的营收增速"
+            },
+            "data": {
+              "en": "12.8% a year",
+              "zh": "每年 12.8%"
+            },
+            "meaning": {
+              "en": "past pace +12.6% a year",
+              "zh": "过去是每年 +12.6%"
+            },
+            "tone": "neutral"
+          },
+          {
+            "signal": {
+              "en": "Revenue growth",
+              "zh": "营收增速"
+            },
+            "data": {
+              "en": "+12.6% a year (2022–2025)",
+              "zh": "每年 +12.6%（2022–2025）"
+            },
+            "meaning": {
+              "en": "$140.00M → $200.00M",
+              "zh": "1.40 亿美元 → 2.00 亿美元"
+            },
+            "tone": "good"
+          },
+          {
+            "signal": {
+              "en": "Net income growth",
+              "zh": "净利润增速"
+            },
+            "data": {
+              "en": "+12.6% a year (2022–2025)",
+              "zh": "每年 +12.6%（2022–2025）"
+            },
+            "meaning": {
+              "en": "$28.00M → $40.00M",
+              "zh": "2,800 万美元 → 4,000 万美元"
+            },
+            "tone": "good"
+          },
+          {
+            "signal": {
+              "en": "Profit margin",
+              "zh": "利润率"
+            },
+            "data": {
+              "en": "20.0%",
+              "zh": "20.0%"
+            },
+            "meaning": {
+              "en": "keeps about 20 cents of every $1 of sales as profit",
+              "zh": "每卖 100 元，大约赚 20 元"
+            },
+            "tone": "good"
+          },
+          {
+            "signal": {
+              "en": "Share count",
+              "zh": "股数变化"
+            },
+            "data": {
+              "en": "+1.0% a year (92.10M → 95.00M)",
+              "zh": "每年 +1.0%（9,210 万 → 9,500 万 股）"
+            },
+            "meaning": {
+              "en": "new shares are issued, so each share owns a smaller slice",
+              "zh": "公司在增发，每股分到的份额被摊薄"
+            },
+            "tone": "neutral"
+          },
+          {
+            "signal": {
+              "en": "Valuation (P/S)",
+              "zh": "估值（P/S）"
+            },
+            "data": {
+              "en": "today 23.8, claim assumes 25",
+              "zh": "今天 23.8，观点假设 25"
+            },
+            "meaning": {
+              "en": "investors pay about $24 for each $1 of yearly revenue",
+              "zh": "投资者愿意为每 1 元年营收付约 24 元"
+            },
+            "tone": "neutral"
+          },
+          {
+            "signal": {
+              "en": "Price swings",
+              "zh": "股价波动"
+            },
+            "data": {
+              "en": "35.2% a year",
+              "zh": "每年约 35.2%"
+            },
+            "meaning": {
+              "en": "moves of ±35% within a year are common for this stock",
+              "zh": "一年内上下波动 35% 左右对这只股票很常见"
+            },
+            "tone": "neutral"
+          },
+          {
+            "signal": {
+              "en": "Past 5 years",
+              "zh": "过去 5 年股价"
+            },
+            "data": {
+              "en": "+12.7% a year",
+              "zh": "每年 +12.7%"
+            },
+            "meaning": {
+              "en": "the claim needs 14.9% a year from here",
+              "zh": "观点需要从现在起每年 14.9%"
+            },
+            "tone": "neutral"
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Layer 4 · Insiders and market environment",
+          "zh": "第 4 层 · 内部人与市场环境"
+        },
+        "rows": [
+          {
+            "signal": {
+              "en": "Insider open-market trades (12 months)",
+              "zh": "内部人公开市场交易（12 个月）"
+            },
+            "data": {
+              "en": "buys 0 ($0.00), sales 1 ($970,000.00)",
+              "zh": "买入 0 笔（0.00 美元），卖出 1 笔（97 万美元）"
+            },
+            "meaning": {
+              "en": "100% of sales under pre-set 10b5-1 plans (less informative); 1 sellers, 0 buyers",
+              "zh": "其中 100% 的卖出属于预先设定的 10b5-1 计划（信息量较低）；卖出 1 人，买入 0 人"
+            },
+            "tone": "bad"
+          },
+          {
+            "signal": {
+              "en": "Other Form 4 entries",
+              "zh": "其他 Form 4 记录"
+            },
+            "data": {
+              "en": "grants 1, option exercises 0, tax withholding 0, other 0",
+              "zh": "授予 1、行权 0、代扣税 0、其他 0"
+            },
+            "meaning": {
+              "en": "not buy/sell decisions; 1 of 1 filings read",
+              "zh": "这些不是买卖决定；读取了 1 份中的 1 份"
+            },
+            "tone": "neutral"
+          },
+          {
+            "signal": {
+              "en": "CNN Fear & Greed",
+              "zh": "CNN 恐惧贪婪指数"
+            },
+            "data": {
+              "en": "50 (neutral)",
+              "zh": "50（neutral）"
+            },
+            "meaning": {
+              "en": "a month ago 45; below 30 means investors are fearful",
+              "zh": "一个月前 45；低于 30 表示市场恐惧"
+            },
+            "tone": "neutral"
+          },
+          {
+            "signal": {
+              "en": "10-year Treasury yield",
+              "zh": "10 年期美债收益率"
+            },
+            "data": {
+              "en": "4.2%",
+              "zh": "4.2%"
+            },
+            "meaning": {
+              "en": "the return available without stock risk",
+              "zh": "不承担股票风险就能拿到的回报"
+            },
+            "tone": "neutral"
+          }
+        ]
+      },
+      {
+        "title": {
+          "en": "Layer 5 · How reliable the data is",
+          "zh": "第 5 层 · 数据可靠吗"
+        },
+        "rows": [
+          {
+            "signal": {
+              "en": "Latest report",
+              "zh": "最新财报"
+            },
+            "data": {
+              "en": "latest periodic report filed 2026-08-01 (61 days before this run)",
+              "zh": "最近一份定期报告申报于 2026-08-01（本次运行前 61 天）"
+            },
+            "meaning": {
+              "en": "recent enough",
+              "zh": "足够新"
+            },
+            "tone": "neutral"
+          },
+          {
+            "signal": {
+              "en": "Sources",
+              "zh": "数据来源"
+            },
+            "data": {
+              "en": "SEC filings and XBRL financial data; daily closing prices",
+              "zh": "SEC 申报与 XBRL 财务数据；每日收盘价"
+            },
+            "meaning": {
+              "en": "data mode: synthetic",
+              "zh": "数据模式：synthetic"
+            },
+            "tone": "bad"
+          },
+          {
+            "signal": {
+              "en": "Not read",
+              "zh": "没有读取"
+            },
+            "data": {
+              "en": "filing text, guidance, news",
+              "zh": "申报正文、管理层指引、新闻"
+            },
+            "meaning": {
+              "en": "only reported numbers and prices are compared",
+              "zh": "只比较了已披露的数字和股价"
+            },
+            "tone": "neutral"
+          }
+        ]
+      }
+    ],
+    "agreements": [
+      {
+        "en": "Insiders made no open-market purchases in 12 months while selling $970,000.00.",
+        "zh": "内部人 12 个月内没有任何公开市场买入，同时卖出 97 万美元。"
+      }
+    ],
+    "divergences": [
+      {
+        "en": "No notable disagreement between the checks.",
+        "zh": "各项检查之间没有明显矛盾。"
+      },
+      {
+        "en": "Touching 100 at some point (42.3%) is much likelier than being there at the end (15.9%).",
+        "zh": "期间某个时点触及 100（42.3%）比到期时守在那里（15.9%）容易得多。"
+      }
+    ],
+    "time_view": [
+      {
+        "signal": {
+          "en": "Next 3 months",
+          "zh": "未来 3 个月"
+        },
+        "data": {
+          "en": "Next 10-Q or 10-K is filed (expected around 2026-10-31)",
+          "zh": "下一份 10-Q 或 10-K 发布（预计 2026-10-31 前后）"
+        },
+        "meaning": {
+          "en": "new quarterly numbers update every check",
+          "zh": "新的季度数据会更新所有检查"
+        },
+        "tone": "neutral"
+      },
+      {
+        "signal": {
+          "en": "Next fiscal year",
+          "zh": "下一个财年"
+        },
+        "data": {
+          "en": "revenue about $225.63M",
+          "zh": "营收约 2.26 亿美元"
+        },
+        "meaning": {
+          "en": "the first milestone on the claim's path",
+          "zh": "这是观点路径上的第一个里程碑"
+        },
+        "tone": "neutral"
+      },
+      {
+        "signal": {
+          "en": "Target date",
+          "zh": "目标日期"
+        },
+        "data": {
+          "en": "2031-09-30",
+          "zh": "2031-09-30"
+        },
+        "meaning": {
+          "en": "revenue of $400.00M a year and a P/S of 25",
+          "zh": "每年营收 4.00 亿美元，且 P/S 为 25"
+        },
+        "tone": "neutral"
+      }
+    ],
+    "scenarios": [
+      {
+        "name": {
+          "en": "Past pace, today's valuation",
+          "zh": "延续过去增速 + 今天的估值"
+        },
+        "assumptions": {
+          "en": "revenue +12.6% a year, P/S 23.8",
+          "zh": "营收每年 +12.6%，P/S 23.8"
+        },
+        "price": "94.06",
+        "vs_target": "-5.9%",
+        "meaning": {
+          "en": "if nothing changes",
+          "zh": "如果一切照旧"
+        }
+      },
+      {
+        "name": {
+          "en": "Past pace, claimed valuation",
+          "zh": "延续过去增速 + 观点假设的估值"
+        },
+        "assumptions": {
+          "en": "revenue +12.6% a year, P/S 25.0",
+          "zh": "营收每年 +12.6%，P/S 25.0"
+        },
+        "price": "99.01",
+        "vs_target": "-1.0%",
+        "meaning": {
+          "en": "the business keeps its record; valuation as the claim assumes",
+          "zh": "业绩按过去的速度，估值按观点的假设"
+        }
+      },
+      {
+        "name": {
+          "en": "The claim's path",
+          "zh": "观点需要的路径"
+        },
+        "assumptions": {
+          "en": "revenue +12.8% a year, P/S 25.0",
+          "zh": "营收每年 +12.8%，P/S 25.0"
+        },
+        "price": "100.00",
+        "vs_target": "0.0%",
+        "meaning": {
+          "en": "what has to happen for the target",
+          "zh": "要达到目标价必须发生的情况"
+        }
+      }
+    ],
+    "scenario_note": {
+      "en": "Scenario prices are formulas: latest annual metric grown at the stated rate to the target date, times the multiple, divided by the assumed share count. They are not forecasts and carry no probabilities. The optional probability section estimates P(price ≥ target) = 20.3% under its own model.",
+      "zh": "情景价格只是公式推演：最近一年的指标按所列增速增长到目标日，乘以估值倍数，再除以届时的股数。它们不是预测，也没有概率。 附加的概率参考页在其模型假设下估计到期价 ≥ 目标价的概率为 20.3%。"
+    },
+    "upside": [
+      {
+        "en": "Next annual revenue at or above $225.63M would show the company on the claim's path.",
+        "zh": "下一年营收达到或超过 2.26 亿美元，说明公司正走在观点需要的路径上。"
+      },
+      {
+        "en": "A market willing to pay a P/S near 25 (today 23.8).",
+        "zh": "市场愿意给出接近 25 的 P/S（今天 23.8）。"
+      }
+    ],
+    "downside": [
+      {
+        "en": "If revenue keeps changing at +12.6% a year, the gap to the target widens every year.",
+        "zh": "如果营收继续按每年 +12.6% 变化，和目标的差距会逐年扩大。"
+      },
+      {
+        "en": "A P/S falling well below the assumed 25.",
+        "zh": "P/S 明显跌破假设的 25。"
+      },
+      {
+        "en": "Faster share issuance than assumed.",
+        "zh": "增发速度快于假设。"
+      }
+    ],
+    "monitor": [
+      {
+        "signal": {
+          "en": "Annual revenue",
+          "zh": "年度营收"
+        },
+        "current": {
+          "en": "$200.00M",
+          "zh": "2.00 亿美元"
+        },
+        "threshold": {
+          "en": "Next annual revenue is reported below 225.63M",
+          "zh": "下一个年度营收低于 2.26 亿"
+        },
+        "meaning": {
+          "en": "below it: off the claim's path",
+          "zh": "低于它：偏离观点路径"
+        }
+      },
+      {
+        "signal": {
+          "en": "Share count",
+          "zh": "股数"
+        },
+        "current": {
+          "en": "95.00M",
+          "zh": "9,500 万 股"
+        },
+        "threshold": {
+          "en": "Shares outstanding rise above 95.94M within a year of 2026-07-24, or above 100.00M at any time",
+          "zh": "2026-07-24 后一年内股份数超过 9,594 万，或任何时候超过 1.00 亿"
+        },
+        "meaning": {
+          "en": "above it: more dilution than assumed",
+          "zh": "超过它：稀释多于假设"
+        }
+      },
+      {
+        "signal": {
+          "en": "Today's P/S",
+          "zh": "当前 P/S"
+        },
+        "current": {
+          "en": "23.8",
+          "zh": "23.8"
+        },
+        "threshold": {
+          "en": "Today's P/S falls below 20.00 (the assumed 25 would then need more than 1.25x expansion)",
+          "zh": "当前 P/S 跌破 20.00（届时假设的 25 需要超过 1.25 倍的估值扩张）"
+        },
+        "meaning": {
+          "en": "below it: the valuation assumption gets harder",
+          "zh": "低于它：估值假设更难实现"
+        }
+      },
+      {
+        "signal": {
+          "en": "Next report",
+          "zh": "下一份财报"
+        },
+        "current": {
+          "en": "2026-08-01",
+          "zh": "2026-08-01"
+        },
+        "threshold": {
+          "en": "Next 10-Q or 10-K is filed (expected around 2026-10-31)",
+          "zh": "下一份 10-Q 或 10-K 发布（预计 2026-10-31 前后）"
+        },
+        "meaning": {
+          "en": "re-run the case with new numbers",
+          "zh": "用新数据重新运行"
+        }
+      }
+    ]
+  },
+  "options": {
+    "source_url": "https://query2.finance.yahoo.com/v7/finance/options/SYNT?date=1860451200",
+    "retrieved_at": "2026-10-01T21:54:45.561567Z",
+    "source_captured_at": "2026-10-01T00:00:00Z",
+    "data_mode": "synthetic",
+    "provider_id": "yahoo_finance_options",
+    "symbol": "SYNT",
+    "underlying_price": "50.0",
+    "expiry": "2028-12-15",
+    "days_to_expiry": 806,
+    "expirations": [
+      "2027-01-15",
+      "2028-12-15"
+    ],
+    "atm_iv": 0.45,
+    "target_iv": 0.525,
+    "target_iv_extrapolated": false,
+    "max_strike": "120.0",
+    "oi_at_or_above_target": 0,
+    "total_call_oi": 6120,
+    "calls": [
+      {
+        "strike": "20.0",
+        "implied_volatility": 0.495,
+        "open_interest": 720,
+        "bid": 38.0,
+        "ask": 39.0,
+        "last": 38.5
+      },
+      {
+        "strike": "25.0",
+        "implied_volatility": 0.4875,
+        "open_interest": 675,
+        "bid": 33.0,
+        "ask": 34.0,
+        "last": 33.5
+      },
+      {
+        "strike": "30.0",
+        "implied_volatility": 0.48,
+        "open_interest": 630,
+        "bid": 28.0,
+        "ask": 29.0,
+        "last": 28.5
+      },
+      {
+        "strike": "35.0",
+        "implied_volatility": 0.4725,
+        "open_interest": 585,
+        "bid": 23.0,
+        "ask": 24.0,
+        "last": 23.5
+      },
+      {
+        "strike": "40.0",
+        "implied_volatility": 0.465,
+        "open_interest": 540,
+        "bid": 18.0,
+        "ask": 19.0,
+        "last": 18.5
+      },
+      {
+        "strike": "45.0",
+        "implied_volatility": 0.4575,
+        "open_interest": 495,
+        "bid": 13.0,
+        "ask": 14.0,
+        "last": 13.5
+      },
+      {
+        "strike": "50.0",
+        "implied_volatility": 0.45,
+        "open_interest": 450,
+        "bid": 8.0,
+        "ask": 9.0,
+        "last": 8.5
+      },
+      {
+        "strike": "55.0",
+        "implied_volatility": 0.4575,
+        "open_interest": 405,
+        "bid": 3.0,
+        "ask": 4.0,
+        "last": 3.5
+      },
+      {
+        "strike": "60.0",
+        "implied_volatility": 0.465,
+        "open_interest": 360,
+        "bid": 0.05,
+        "ask": 0.1,
+        "last": 0.08
+      },
+      {
+        "strike": "65.0",
+        "implied_volatility": 0.4725,
+        "open_interest": 315,
+        "bid": 0.05,
+        "ask": 0.1,
+        "last": 0.08
+      },
+      {
+        "strike": "70.0",
+        "implied_volatility": 0.48,
+        "open_interest": 270,
+        "bid": 0.05,
+        "ask": 0.1,
+        "last": 0.08
+      },
+      {
+        "strike": "75.0",
+        "implied_volatility": 0.4875,
+        "open_interest": 225,
+        "bid": 0.05,
+        "ask": 0.1,
+        "last": 0.08
+      },
+      {
+        "strike": "80.0",
+        "implied_volatility": 0.495,
+        "open_interest": 180,
+        "bid": 0.05,
+        "ask": 0.1,
+        "last": 0.08
+      },
+      {
+        "strike": "85.0",
+        "implied_volatility": 0.5025,
+        "open_interest": 135,
+        "bid": 0.05,
+        "ask": 0.1,
+        "last": 0.08
+      },
+      {
+        "strike": "90.0",
+        "implied_volatility": 0.51,
+        "open_interest": 90,
+        "bid": 0.05,
+        "ask": 0.1,
+        "last": 0.08
+      },
+      {
+        "strike": "95.0",
+        "implied_volatility": 0.5175,
+        "open_interest": 45,
+        "bid": 0.05,
+        "ask": 0.1,
+        "last": 0.08
+      },
+      {
+        "strike": "100.0",
+        "implied_volatility": 0.525,
+        "open_interest": 0,
+        "bid": 0.05,
+        "ask": 0.1,
+        "last": 0.08
+      },
+      {
+        "strike": "105.0",
+        "implied_volatility": 0.5325,
+        "open_interest": 0,
+        "bid": 0.05,
+        "ask": 0.1,
+        "last": 0.08
+      },
+      {
+        "strike": "110.0",
+        "implied_volatility": 0.54,
+        "open_interest": 0,
+        "bid": 0.05,
+        "ask": 0.1,
+        "last": 0.08
+      },
+      {
+        "strike": "115.0",
+        "implied_volatility": 0.5475,
+        "open_interest": 0,
+        "bid": 0.05,
+        "ask": 0.1,
+        "last": 0.08
+      },
+      {
+        "strike": "120.0",
+        "implied_volatility": 0.555,
+        "open_interest": 0,
+        "bid": 0.05,
+        "ask": 0.1,
+        "last": 0.08
+      }
+    ]
+  },
+  "base_rate": {
+    "metric": "annual_revenue",
+    "start_year": 2020,
+    "end_year": 2025,
+    "size_low": "100000000.0",
+    "size_high": "400000000",
+    "companies": 173,
+    "achieved": 53,
+    "rate": 0.3063583815028902,
+    "required_cagr": "0.1282",
+    "percentile_of_required": 0.6936416184971098,
+    "median_cagr": "0.0567",
+    "p90_cagr": "0.2473",
+    "examples": [
+      {
+        "name": "Synthetic Filer 193 (fictional)",
+        "start": "355172654",
+        "end": "2510093239",
+        "cagr": "0.4786"
+      },
+      {
+        "name": "Synthetic Filer 008 (fictional)",
+        "start": "177982223",
+        "end": "1228422414",
+        "cagr": "0.4716"
+      },
+      {
+        "name": "Synthetic Filer 044 (fictional)",
+        "start": "273858062",
+        "end": "1348296960",
+        "cagr": "0.3755"
+      },
+      {
+        "name": "Synthetic Filer 131 (fictional)",
+        "start": "227161516",
+        "end": "1073581363",
+        "cagr": "0.3643"
+      },
+      {
+        "name": "Synthetic Filer 184 (fictional)",
+        "start": "343290291",
+        "end": "1466040692",
+        "cagr": "0.3369"
+      }
+    ],
+    "concepts": [
+      "RevenueFromContractWithCustomerExcludingAssessedTax",
+      "Revenues"
+    ],
+    "source_urls": [
+      "https://data.sec.gov/api/xbrl/frames/us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax/USD/CY2020.json",
+      "https://data.sec.gov/api/xbrl/frames/us-gaap/Revenues/USD/CY2020.json",
+      "https://data.sec.gov/api/xbrl/frames/us-gaap/RevenueFromContractWithCustomerExcludingAssessedTax/USD/CY2025.json",
+      "https://data.sec.gov/api/xbrl/frames/us-gaap/Revenues/USD/CY2025.json"
+    ],
+    "data_mode": "synthetic",
+    "note": "Survivors only: companies that reported in both years. Acquired or delisted companies are missing, which makes the rate optimistic."
+  },
+  "price_base_rate": {
+    "source_url": "https://query1.finance.yahoo.com/v8/finance/chart/SYNT?range=max&interval=1mo",
+    "retrieved_at": "2026-10-01T21:54:45.565914Z",
+    "source_captured_at": "2026-10-01T00:00:00Z",
+    "data_mode": "synthetic",
+    "symbol": "SYNT",
+    "window_months": 60,
+    "windows": 0,
+    "hits": 0,
+    "rate": null,
+    "required_return": "1.0000",
+    "median_return": null,
+    "best_return": null,
+    "history_start": "2021-10-29"
+  },
+  "benchmarks": [
+    {
+      "symbol": "SPY",
+      "label": "S&P 500 (SPY)",
+      "start": "2021-10-29",
+      "end": "2026-09-30",
+      "total_return": "1.3956",
+      "annual_return": "0.1945",
+      "data_mode": "synthetic"
+    },
+    {
+      "symbol": "QQQ",
+      "label": "Nasdaq-100 (QQQ)",
+      "start": "2021-10-29",
+      "end": "2026-09-30",
+      "total_return": "0.7397",
+      "annual_return": "0.1192",
+      "data_mode": "synthetic"
+    }
+  ],
+  "insiders": {
+    "window_start": "2025-10-01",
+    "filings_listed": 1,
+    "filings_read": 1,
+    "filings_failed": 0,
+    "purchases": 0,
+    "purchase_value": "0",
+    "sales": 1,
+    "sale_value": "970000.00",
+    "plan_sale_value": "970000.00",
+    "buyers": 0,
+    "sellers": 1,
+    "grants": 1,
+    "exercises": 0,
+    "tax_withholding": 0,
+    "other": 0,
+    "net_open_market_value": "-970000.00",
+    "transactions": [
+      {
+        "filed": "2026-06-02",
+        "owner": "Example Officer (fictional)",
+        "role": "Chief Executive Officer",
+        "code": "S",
+        "shares": "20000",
+        "price": "48.50",
+        "value": "970000.00",
+        "acquired": false,
+        "plan_10b5_1": true,
+        "url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990126000011/form4.xml"
+      },
+      {
+        "filed": "2026-06-02",
+        "owner": "Example Officer (fictional)",
+        "role": "Chief Executive Officer",
+        "code": "A",
+        "shares": "15000",
+        "price": "0",
+        "value": "0.00",
+        "acquired": true,
+        "plan_10b5_1": true,
+        "url": "https://www.sec.gov/Archives/edgar/data/9999901/000999990126000011/form4.xml"
+      }
+    ],
+    "data_mode": "synthetic"
+  },
+  "prediction_markets": {
+    "source_url": "https://gamma-api.polymarket.com/public-search?q=SYNT",
+    "retrieved_at": "2026-10-01T21:54:45.579801Z",
+    "source_captured_at": "2026-10-01T00:00:00Z",
+    "data_mode": "synthetic",
+    "query": "SYNT",
+    "markets": []
+  },
+  "sentiment": {
+    "source_url": "https://production.dataviz.cnn.io/index/fearandgreed/graphdata",
+    "retrieved_at": "2026-10-01T21:54:45.579982Z",
+    "source_captured_at": "2026-10-01T00:00:00Z",
+    "data_mode": "synthetic",
+    "score": 50.0,
+    "rating": "neutral",
+    "previous_week": 48.0,
+    "previous_month": 45.0,
+    "as_of": "2026-10-01T00:00:00Z"
+  },
+  "oracle": {
+    "target_price": "100",
+    "target_date": "2031-09-30",
+    "low": 0.15677077563500355,
+    "high": 0.3063583815028902,
+    "tier": "low",
+    "tier_label": {
+      "en": "unlikely",
+      "zh": "不太可能"
+    },
+    "methods": [
+      {
+        "id": "M1",
+        "name": {
+          "en": "Option market (implied)",
+          "zh": "期权市场（隐含）"
+        },
+        "status": "ok",
+        "probability": 0.15899613611398233,
+        "touch_probability": 0.42303197101650436,
+        "measures": {
+          "en": "what traders with money at stake price in, via implied volatility",
+          "zh": "真金白银交易的期权，通过隐含波动率反映的定价"
+        },
+        "detail": {
+          "en": "expiry 2028-12-15, implied volatility 52% at strike ~100; open interest at or above the target: 0 of 6,120 calls; risk-free rate 4.20% (10-year Treasury yield)",
+          "zh": "到期日 2028-12-15，行权价约 100 处的隐含波动率 52%；目标价及以上的未平仓合约 0 张（共 6,120 张看涨）；无风险利率 4.20%（10 年期美债收益率）"
+        },
+        "inputs": {
+          "spot": "50",
+          "target": "100",
+          "years": "5.00",
+          "implied_volatility": "0.5250",
+          "rate": "0.0420"
+        },
+        "limitations": [
+          {
+            "en": "Risk-neutral probability: it prices risk, not a forecast of real-world odds.",
+            "zh": "风险中性概率：反映的是风险定价，不是对真实概率的预测。"
+          },
+          {
+            "en": "Uses one implied volatility for the whole period.",
+            "zh": "整个期间只用一个隐含波动率。"
+          },
+          {
+            "en": "The longest expiry (2028-12-15) ends before the target date; its volatility is extended to 2031-09-30.",
+            "zh": "最远到期日（2028-12-15）早于目标日，把它的波动率延用到 2031-09-30。"
+          }
+        ]
+      },
+      {
+        "id": "M2",
+        "name": {
+          "en": "Statistical model (historical volatility)",
+          "zh": "统计模型（历史波动率）"
+        },
+        "status": "ok",
+        "probability": 0.15677077563500355,
+        "touch_probability": 0.33687626715393343,
+        "measures": {
+          "en": "how often a stock this volatile ends above the target, if it moves like it has in the past",
+          "zh": "如果股价按过去的波动方式运动，到期时高于目标价的可能性"
+        },
+        "detail": {
+          "en": "historical volatility 35% a year (daily log returns of adjusted close, 2021-10-01 to 2026-09-30 (1303 returns)); risk-free rate 4.20% (10-year Treasury yield)",
+          "zh": "历史年化波动率 35%（daily log returns of adjusted close, 2021-10-01 to 2026-09-30 (1303 returns)）；无风险利率 4.20%（10 年期美债收益率）"
+        },
+        "inputs": {
+          "spot": "50",
+          "target": "100",
+          "years": "5.00",
+          "historical_volatility": "0.3517",
+          "rate": "0.0420"
+        },
+        "limitations": [
+          {
+            "en": "Constant volatility and no jumps; past volatility is not a forecast.",
+            "zh": "假设波动率不变、没有跳空；过去的波动率不是预测。"
+          }
+        ]
+      },
+      {
+        "id": "M3",
+        "name": {
+          "en": "Base rate (similar companies)",
+          "zh": "历史基准率（同规模公司）"
+        },
+        "status": "ok",
+        "probability": 0.3063583815028902,
+        "touch_probability": null,
+        "measures": {
+          "en": "how many US companies of similar size grew revenue as fast as the claim needs",
+          "zh": "规模相近的美国上市公司里，营收增速达到观点要求的比例"
+        },
+        "detail": {
+          "en": "53 of 173 companies with revenue between 100,000,000 and 400,000,000 USD in 2020 grew at least 12.8% a year to 2025; the median grew 5.7% a year",
+          "zh": "2020 年营收在 1.0 亿至 4.0 亿美元之间的 173 家公司中，有 53 家到 2025 年保持了每年至少 12.8% 的增长；中位数为每年 5.7%"
+        },
+        "inputs": {
+          "companies": "173",
+          "achieved": "53",
+          "required_cagr": "0.1282"
+        },
+        "limitations": [
+          {
+            "en": "Probability of the business condition, not of the price; the valuation assumption still has to hold.",
+            "zh": "这是业绩条件的概率，不是股价的概率；估值假设仍需成立。"
+          },
+          {
+            "en": "Survivors only: companies that reported in both years. Acquired or delisted companies are missing, which makes the rate optimistic.",
+            "zh": "只统计两年都还在申报的公司，被收购或退市的公司不在其中，所以比例偏乐观。"
+          }
+        ]
+      },
+      {
+        "id": "M4",
+        "name": {
+          "en": "This stock's own history",
+          "zh": "这只股票自己的历史"
+        },
+        "status": "not_computable",
+        "probability": null,
+        "touch_probability": null,
+        "measures": {
+          "en": "share of past windows of the same length in which this stock rose at least as much",
+          "zh": "过去相同长度的时间段里，这只股票涨幅达到要求的比例"
+        },
+        "detail": {
+          "en": "not enough price history for a window this long",
+          "zh": "价格历史不够长"
+        },
+        "inputs": {},
+        "limitations": []
+      }
+    ],
+    "ladder": [
+      {
+        "level": "25.0",
+        "label": {
+          "en": "half of today",
+          "zh": "今天的一半"
+        },
+        "options_p": 0.6117216130423295,
+        "model_p": 0.7750178727274013
+      },
+      {
+        "level": "50.0",
+        "label": {
+          "en": "today's price",
+          "zh": "今天的价格"
+        },
+        "options_p": 0.3842586663615441,
+        "model_p": 0.449797890118608
+      },
+      {
+        "level": "75.0",
+        "label": {
+          "en": "+50%",
+          "zh": "+50%"
+        },
+        "options_p": 0.23442224637848486,
+        "model_p": 0.26046834235551164
+      },
+      {
+        "level": "100.0",
+        "label": {
+          "en": "double",
+          "zh": "翻倍"
+        },
+        "options_p": 0.15899613611398233,
+        "model_p": 0.15677077563500355
+      },
+      {
+        "level": "100.0",
+        "label": {
+          "en": "the claim's target",
+          "zh": "观点目标价"
+        },
+        "options_p": 0.15899613611398233,
+        "model_p": 0.15677077563500355
+      }
+    ],
+    "agreement": {
+      "en": "The 3 methods agree within a factor of 3: 15.7% to 30.6%.",
+      "zh": "3 种方法相差不到 3 倍：15.7% 到 30.6%。"
+    },
+    "risk_free_rate": "0.0420"
+  },
+  "data_steps": {
+    "sec_filings": "ok",
+    "sec_facts": "ok",
+    "price_history": "ok",
+    "options": "ok",
+    "risk_free_rate": "ok",
+    "price_base_rate": "ok",
+    "benchmarks": "ok",
+    "base_rate": "ok",
+    "insiders": "ok",
+    "prediction_markets": "ok",
+    "fear_greed": "ok"
+  },
+  "narrative": null,
+  "provider_errors": [],
+  "validation_issues": [],
+  "missing_fields": [],
+  "warnings": [
+    "synthetic example data is used for public sources in this run, not real SEC or market data"
+  ],
+  "warnings_zh": [
+    "本次公开数据使用合成示例数据，不是真实的 SEC 或市场数据"
+  ],
+  "data_modes": {
+    "claim_inputs": "user_input",
+    "sec_filings": "synthetic",
+    "sec_facts": "synthetic",
+    "market_prices": "synthetic",
+    "options": "synthetic",
+    "base_rate": "synthetic",
+    "insiders": "synthetic",
+    "fear_greed": "synthetic",
+    "analysis": "deterministic rules-v1 (provisional)"
+  },
+  "mixed_sources": true,
+  "analysis_status": "deterministic_rules",
+  "disclaimer": "TickerCase checks what a claim requires under the user's assumptions against dated public data. The verdict describes the evidence as of a date; it is not a price prediction, a guarantee or investment advice. The optional probability section is a model output under stated assumptions and is not part of the verdict."
+}
