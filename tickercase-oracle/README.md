@@ -1,6 +1,32 @@
 # TickerCase
 
-**Since v0.5 TickerCase is a stock-only version of digital-oracle:** the headline answer to a claim such as "RKLB reaches $300 within 3 years" or "RKLB spikes to $200" is a probability range computed by independent methods and cross-checked, with every number traced to a source. The original evidence-as-of verdict (OA.13) is kept as a secondary view. This changes the product scope of the Team 12 course documents, which describe a verdict without price prediction; the documents need revising.
+**Write one sentence about a stock, such as "NVDA will hit $300 in 3 years", and get a probability range you can trace.** Four independent methods are computed from free public data, every number carries its source and time, and an optional AI narrative has each of its numbers checked against the facts it cites.
+
+![Console page: claim input, system settings, check and confirm](docs/screenshots/console.jpg)
+
+![Report page: status bar, claim and K-line](docs/screenshots/report-kline.jpg)
+
+![Report page: probability range from four methods, and the eight data sources](docs/screenshots/report-probability.jpg)
+
+## What it does
+
+- **Reads the claim.** Fixed rules (no AI) pick out the ticker, target price and time frame, and whether the claim means touching the price before the deadline ("hit", "冲到") or closing above it on the date. Public data fills in the price, share count and financials. Every value shows where it came from, and the user confirms the exact inputs, which are tied to a SHA-256 fingerprint.
+- **Computes the probability in code.** M1 uses the option market's implied volatility (Black-Scholes N(d2), and the first-passage formula for touch claims), M2 the same formulas with historical volatility, M3 the share of similar-size US companies that grew as fast as the claim needs (SEC XBRL frames), and M4 this stock's own past windows of the same length. The headline is the range of the usable methods, and disagreements between them are explained.
+- **Shows the evidence.** Eight data sources (Yahoo option chains and prices, the 10-year Treasury yield, SEC filings and XBRL facts, peer base rates, Form 4 insider trades, Polymarket, CNN Fear & Greed), a K-line, a layered plain-language report, an event-scenario calculator and a fundamentals check (an evidence-as-of verdict with recheck conditions).
+- **Checks the AI.** The optional narrative (Claude) sees only a numbered fact table. A verifier checks every number in every sentence against the facts it cites, and a narrative already written for the same facts is reused. Measured cost: about $0.06 per narrative.
+- **Reproducible.** Live, record, replay and synthetic data modes, exact `Decimal` arithmetic, and 216 offline tests.
+
+Chinese and English interface. Research use only; not investment advice.
+
+**Tech:** Python, Streamlit (a custom console interface: CSS and HTML units, K-line chart in an iframe), Pydantic, FastAPI, pandas and Altair, the Anthropic API, pytest. Data: SEC EDGAR and XBRL, Yahoo Finance, Polymarket, CNN Fear & Greed. All free; SEC needs only a contact email.
+
+**Background:** course project for SYSEN 5151, Team 12. The team's operational concept defines the use case (UC.1 "Evaluate a Stock Claim"). The TickerCase application in this repository, from the first commit to the current version, was built by [@RIleyyu1](https://github.com/RIleyyu1) with Claude Code as an AI pair programmer; the commit history records this. The team repository [Yunynl/Sysen5151_t12](https://github.com/Yunynl/Sysen5151_t12) carries the same code under `tickercase-oracle/`.
+
+To run it, see [Quick start](#quick-start). The sections below describe each version and the details.
+
+## Scope since v0.5
+
+TickerCase is a stock-only take on [komako-workshop/digital-oracle](https://github.com/komako-workshop/digital-oracle): the headline answer to a claim such as "RKLB reaches $300 within 3 years" or "RKLB spikes to $200" is a probability range computed by independent methods and cross-checked, with every number traced to a source. The original evidence-as-of verdict (OA.13) is kept as a secondary view. The Team 12 course documents still describe the earlier scope (a verdict without price prediction) and need revising.
 
 ## Probability and cross-checks (v0.5)
 
@@ -12,6 +38,15 @@
 | M4 own history | share of past windows of the same length in which this stock rose enough | monthly closes; used in the range only when the history holds ≥ 4 non-overlapping windows |
 
 The range is [min, max] of the usable methods; the tier follows the middle estimate (<5% lottery, 5–20% unlikely, 20–50% possible, >50% likely). Where methods disagree, the page says which is higher and what each measures. Context layers: insider Form 4 transactions split by code (only P purchases and S sales are trades by choice; grants, exercises and tax withholding are not selling), Polymarket contracts on the ticker, CNN Fear & Greed, S&P 500 and Nasdaq-100 returns over the same length. The page shows each data step as it runs and which ones failed. A live RKLB run fetches all eleven steps in about 12 seconds.
+
+## Console page and K-line (v0.9)
+
+The page is redrawn as a cassette-futurist console (design "驾驶舱 v1.1"). Logic, inputs, stored cases, the API and the CLI are unchanged.
+
+- **Two pages.** The console: the claim box (UNIT 01 · CLM) with READ; the system unit (data source, SEC contact email, Claude key, and an optional "write the narrative after each RUN", off by default); the check-and-confirm unit (UNIT 02 · CNF), where every input shows where it came from (✎ claim, ⓘ public data, ◇ default assumption, · typed by you) and ARM confirms; the eight data channels and four methods a case uses; the three most recent tapes. RUN shows each data step on a pipeline screen, then opens the report: a status bar that stays on screen (range, the other condition, warnings, jump keys), the claim (UNIT 01), the K-line (02), the probability screen with the four method strips (03), the eight source readings (04), the report as five channels (05: report, scenario, levels and methods, fundamentals, raw data), signals and the fundamentals verdict (06), and the AI narrative printed on continuous paper (07). "◀ NEW" returns to the console with every input kept; an edit there makes the report stale (it stays under HIST).
+- **K-line.** The daily price request now keeps open, high, low and volume as well (no extra request) and builds daily (about 6 months), weekly (2 years) and monthly (5 years) candles, stored as `MarketSnapshot.kline`. The chart has a timeframe switch, a cursor (hover or ◀ ▶), the target line and a zone up to the deadline that holds only the computed probabilities, never a forecast path. Up bars are hollow and down bars solid, so red is not used for prices. A source with closes only, and cases saved before v0.9, get a close line instead.
+- **Rules of the look.** Light only inside screens (phosphor green, or amber with the GRN / AMB switch); cel shading only on hardware; red only for system warnings (failed sources, filing coverage gaps), while market divergences are amber; motion in steps, only on the first view of a new report, and off under reduced motion. Fonts: Fusion Pixel 12px and VT323 (both OFL, in `static/fonts`), IBM Plex Mono and Noto Serif SC (Google Fonts). On narrow screens the units stack and the data bus folds away.
+- **Where.** `src/tickercase/ui/cockpit.py` holds the page CSS and the HTML of each unit, `src/tickercase/ui/kline.py` the chart page; native widgets keep their keys and are only restyled.
 
 ## Fewer tokens for the AI narrative (v0.8)
 
@@ -35,11 +70,11 @@ A live RKLB run ("RKLB 3年内脉冲到200") fetches all eleven steps plus the t
 
 On the result page, "生成 AI 叙述" (Write AI narrative) makes one call to Claude (since v0.8: model and effort from settings, one language per call; structured JSON output, server-side refusal fallback `fallbacks: "default"`). Claude receives only a numbered fact table built from the case (every value fetched or computed, with its source) and returns six sections (core logic, agreeing signals, divergences, conclusion, upside, downside), each sentence with the fact ids it uses. `narrative.verify` then checks every number in every sentence against the cited facts, allowing unit changes and rounding (%, 亿, 万亿, B, M): ✔ matches, ○ no numbers, ⚠ the number exists but under another fact, ✖ the number has no source. The counts and the token cost are shown with the narrative and stored in the case.
 
-Setup: put `ANTHROPIC_API_KEY` in `.env` (the sidebar form does this), or log in with `ant auth login`. The call is billed per token (Claude Opus 5.5: $4 / $20 per million input / output tokens); one narrative typically uses a few thousand input and output tokens. The narrative is only written when the button is pressed. Without a key the page reports "not configured" and everything else works.
+Setup: put `ANTHROPIC_API_KEY` in `.env` (the SYS unit on the console does this), or log in with `ant auth login`. The call is billed per token (Claude Opus 5.5: $4 / $20 per million input / output tokens); one narrative typically uses a few thousand input and output tokens. The narrative is only written when the button is pressed. Without a key the page reports "not configured" and everything else works.
 
 TickerCase turns a stock claim ("SYNT will be $100 in five years") into an inspectable investment case: explicit assumptions, reproducible numbers, dated public evidence, an evidence-as-of verdict and the conditions that should trigger a new review. It follows UC.1 *Evaluate a Stock Claim* from the Team 12 operational concept.
 
-It does **not** trade, manage portfolios, predict prices or give investment advice. The verdict describes the state of the evidence on a date. An optional probability section shows a model output under your assumptions; it never feeds the verdict.
+It does **not** trade, manage portfolios or give investment advice. The probabilities are market-implied or model outputs under stated assumptions, not guarantees; the fundamentals verdict describes the state of the evidence on a date.
 
 ## Flow (UC.1)
 
@@ -79,9 +114,9 @@ Page:
 streamlit run app.py
 ```
 
-The page is in Chinese and English (switch in the sidebar). In the sidebar click "合成示例 · P/S" (or P/E), then "确认以上输入", then "运行评估". The examples use the fictional company `SYNT` and synthetic data.
+The page is in Chinese and English (中 / EN on the bridge at the top). On the console press "EX-1 合成示例 P/S" (or EX-2 for P/E), then "ARM 确认输入", then "RUN 生成报告". The examples use the fictional company `SYNT` and synthetic data.
 
-For a real company choose `live`. If no SEC contact is configured, the sidebar asks for an email and saves `SEC_USER_AGENT` to the local `.env`. Fill in the claim box, click "补全其余项" (Fill in the rest), check the values and default assumptions, confirm and run. After a run the inputs collapse into a one-line summary above the case. Past cases are listed under "历史 · History", where two or more can be compared side by side.
+For a real company choose LIVE in the SYS unit. If no SEC contact is configured, the SYS unit asks for an email and saves `SEC_USER_AGENT` to the local `.env`. Write the claim, press READ, check the values and their sources in UNIT 02, then ARM and RUN. "◀ NEW" goes back to the console. Past cases are under HIST, where two or more can be compared side by side; ▶ PLAY on a tape on the console opens one directly.
 
 API:
 
@@ -145,7 +180,7 @@ Acceptance example (synthetic): reference 50, target 100, 5 years, 100,000,000 t
 | --- | --- | --- | --- |
 | SEC EDGAR submissions `data.sec.gov/submissions` | 10-K / 10-Q / 8-K filing list, links | free, no key | requires a User-Agent with contact email (`SEC_USER_AGENT`); max 10 requests/s |
 | SEC XBRL company facts `data.sec.gov/api/xbrl/companyfacts` | annual revenue, annual net income, shares outstanding | free, no key | same User-Agent rule; reported values as tagged by the filer |
-| Yahoo Finance chart `query1.finance.yahoo.com/v8/finance/chart` | daily and monthly closes, historical volatility, ^TNX, SPY, QQQ | free, no key | unofficial endpoint without published terms or service guarantee; may rate-limit; sent with `TickerCase/0.2` as User-Agent, no email |
+| Yahoo Finance chart `query1.finance.yahoo.com/v8/finance/chart` | daily and monthly closes, K-line candles (from the same response), historical volatility, ^TNX, SPY, QQQ | free, no key | unofficial endpoint without published terms or service guarantee; may rate-limit; sent with `TickerCase/0.2` as User-Agent, no email |
 | Yahoo Finance options `query2.finance.yahoo.com/v7/finance/options` | option chains, implied volatility | free, no key | needs a session cookie and crumb (handled by `YahooAuthedClient`); unofficial |
 | SEC XBRL frames `data.sec.gov/api/xbrl/frames` | revenue / net income of all filers for a calendar year | free, no key | SEC User-Agent rule |
 | SEC Archives Form 4 XML | insider transactions | free, no key | SEC User-Agent rule; at most 40 filings per run |
@@ -206,7 +241,11 @@ Statuses: `evaluated`, `evaluated_with_provider_errors`, `blocked_invalid_input`
 ## Layout
 
 ```
-app.py                              Streamlit page
+app.py                              Streamlit page (console and report)
+src/tickercase/ui/cockpit.py        console look: page CSS and the HTML of each unit
+src/tickercase/ui/kline.py          K-line chart page (iframe)
+static/                             screen fonts (OFL) and textures, served at /app/static
+.streamlit/config.toml              theme, fonts and static file serving
 src/tickercase/models.py            typed inputs, results, evidence, verdict
 src/tickercase/validation.py        validation, missing fields, confirmation fingerprint
 src/tickercase/calculations.py      pure Decimal calculations
