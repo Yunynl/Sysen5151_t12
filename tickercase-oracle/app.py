@@ -23,7 +23,7 @@ from tickercase import __version__
 from tickercase.config import REPO_ROOT, load_settings, write_env_value
 from tickercase.http_client import validate_user_agent
 from tickercase.models import VERDICT_DISPLAY_ZH, CaseResult, ClaimDraft, Confirmation, PlainReport, ReferenceSnapshot, Text
-from tickercase.narrative import estimate_cost
+from tickercase.narrative import estimate_cost, recheck
 from tickercase.oracle import event_move, p_end_above, p_touch, scenario
 from tickercase.providers.options import iv_at
 from tickercase.service import CLAIM_TEXT_PREFIX, DEFAULT_PREFIX, CaseService
@@ -43,7 +43,10 @@ S = {
     "language": ("语言", "Language"),
     "view": ("页面", "Page"), "view_new": ("CASE 观点", "CASE"), "view_history": ("HIST 历史", "HIST"),
     "tube": ("荧光颜色", "Phosphor"),
-    "back_new": ("◀ NEW 新观点", "◀ NEW claim"),
+    "back_edit": ("◀ EDIT 修改输入", "◀ EDIT inputs"),
+    "back_edit_help": ("回到输入页，保留这个案例的输入，改完重新确认即可。", "Back to the inputs of this case; change them and confirm again."),
+    "back_new": ("+ NEW 新观点", "+ NEW claim"),
+    "back_new_help": ("清空输入，开始一个新观点；这个案例保留在 HIST 里。", "Clear the inputs and start a new claim; this case stays in HIST."),
     "data_chip": ("数据源", "DATA"),
     "mode": ("DATA · 数据源模式", "DATA · data source"),
     "mode_help": ("实时数据会请求 SEC、行情和期权接口；合成示例使用虚构公司 SYNT 的数据。", "Live calls SEC, quote and option sources; the synthetic example uses the fictional company SYNT."),
@@ -74,6 +77,8 @@ S = {
     "need_ticker": ("先填写股票代码。", "Enter a ticker first."),
     "recognized": ("从原文识别：{items}", "Read from the claim: {items}"),
     "recognized_none": ("没有从原文识别出代码、目标价或时间。", "Nothing could be read from the claim."),
+    "kept_user": ("保留了你手动填写的：{items}。要改用原文的值，请先清空这些框再点识别。",
+                  "Kept the values you typed: {items}. To use the claim's values, clear those fields and read again."),
     "multiple_target": ("目标价 = 参考价 {ref} × {x}（原文「{text}」）", "Target = reference {ref} × {x} (from “{text}”)"),
     "condition": ("怎样算实现", "What counts as coming true"),
     "condition_help": ("期间触及：截止日前任何一天达到目标价就算，适合「冲到」「脉冲」这类说法。到期站上：截止日当天仍在目标价以上。",
@@ -158,6 +163,7 @@ S = {
     "ai_summary": ("{ok}/{total} 句通过核对 · {bad} 句含无出处数字 · {model}", "{ok}/{total} sentences pass · {bad} with unsourced numbers · {model}"),
     "ai_usage": ("输入 {inp:,} · 输出 {out:,} token · 约 ${cost:.3f}", "{inp:,} input · {out:,} output tokens · about ${cost:.3f}"),
     "ai_reused": ("复用案例 {case} 中相同事实的叙述，这次没有调用 API", "Reused from case {case} with the same facts; no API call this time"),
+    "ai_rechecked": ("已按当前核对规则重新核对（写成时为 {ok}/{total}）", "checked again with today's rules (it scored {ok}/{total} when written)"),
     "ai_failed": ("AI 叙述未生成：", "AI narrative not written: "),
     "ai_facts": ("事实表与核对明细", "Fact table and check details"),
     "ai_legend": ("核 数字与引用的事实一致 · ○ 无数字的解释 · ⚠ 数字存在但引用了别的事实 · ✖ 数字找不到出处",
@@ -258,7 +264,8 @@ FIELD_META = {
     "claim_text": ("观点原文", "Claim", ("例如：RKLB 3 年内冲到 200", "e.g. NVDA will hit $300 in 3 years"), "要核验的原始说法，原样记录。", "The claim as stated, recorded verbatim."),
     "ticker": ("股票代码", "Ticker", "AAPL", "美股代码。", "US ticker."),
     "target_price": ("目标价", "Target price", "100", "观点给出的目标价格。", "The price the claim names."),
-    "horizon_years": ("时间（年）", "Horizon (years)", "3", "观点在多少年内或多少年后兑现，可填小数。", "Years until the claim should hold; decimals allowed."),
+    "horizon_years": ("时间（年）", "Horizon (years)", "3", "观点在多少年内或多少年后兑现，可填小数；范围约 1 个月（0.08）到 10 年。",
+                      "Years until the claim should hold; decimals allowed, from about one month (0.08) to 10 years."),
     "currency": ("币种", "Currency", "USD", "3 位 ISO 代码。SEC 财务数据按 USD 比较。", "3-letter ISO code. SEC amounts are compared in USD."),
     "reference_price": ("参考价", "Reference price", "50", "参考值：当前或某日的股价。", "Reference value: the price on a date."),
     "reference_price_date": ("参考价日期", "Reference date", "YYYY-MM-DD", "参考价对应的交易日。", "Trading day of the reference price."),
@@ -318,6 +325,9 @@ ISSUE_ZH = {
     "invalid_ticker": "{f}：格式不正确", "invalid_currency": "{f}：须为 3 位字母代码",
     "currency_mismatch": "{f}：与价格币种不一致，不做汇率换算", "unsupported_method": "{f}：只能是 P/S 或 P/E",
     "out_of_range": "{f}：超出允许范围", "unknown_field": "{f}：包含未知字段", "unsupported_mode": "{f}：选项无效",
+    "horizon_too_short": "{f}：太短，最短约 1 个月（0.08 年）；更短的期限无法用月度股价和年度基础比率评估",
+    "horizon_too_long": "{f}：太长，最长 10 年；更长的期限超出基础比率的数据窗口和期权到期日",
+    "deadline_passed": "{f}：参考价日期加上这个期限，截止日已经过去",
 }
 MISSING_ZH = {
     "base_annual_metric": "未填基期指标，不计算相对基期的增速",
@@ -540,6 +550,15 @@ def _clear_form() -> None:
     _reset_confirmation()
 
 
+def _new_claim() -> None:
+    """◀ NEW starts from an empty form; the finished case stays in HIST and settings (mode, language, AI) are kept."""
+    _clear_form()
+    st.session_state["extraction"] = None
+    st.session_state["result"] = None
+    st.session_state["run_error"] = None
+    st.session_state["page"] = "home"
+
+
 def _metric_suggestion(snap: ReferenceSnapshot, method: str):
     return snap.revenue_suggestion if method == "price_to_sales" else snap.net_income_suggestion
 
@@ -637,12 +656,22 @@ def _extract_and_fill() -> None:
         return
     ex = get_service().extract(text, mode=st.session_state["sec_mode"])
     sources = dict(st.session_state["prefill_sources"])
-    found_zh, found_en = [], []
+    found_zh, found_en, kept_zh, kept_en = [], [], [], []
     for name, value, src in (("ticker", ex.ticker, ex.ticker_text), ("target_price", ex.target_price, ex.target_text),
                              ("horizon_years", ex.horizon_years, ex.horizon_text)):
-        if value is None or not _is_untouched(name):
+        current, old = st.session_state[f"f_{name}"].strip(), sources.get(name)
+        if value is None:
+            # a value read from an earlier sentence does not belong to this one
+            if old is not None and old[1].startswith(CLAIM_TEXT_PREFIX) and current == old[0]:
+                st.session_state[f"f_{name}"] = ""
+                sources.pop(name)
             continue
         val = format(value.normalize(), "f") if isinstance(value, Decimal) else str(value)
+        if not _is_untouched(name):
+            if current != val:  # the user's own entry wins, but say so instead of skipping it silently
+                kept_zh.append(f"{FIELD_META[name][0]} {current}（原文是 {val}）")
+                kept_en.append(f"{FIELD_META[name][1]} {current} (the claim says {val})")
+            continue
         st.session_state[f"f_{name}"] = val
         sources[name] = (val, f"{CLAIM_TEXT_PREFIX}{src}")
         found_zh.append(f"{FIELD_META[name][0]} {val}（「{src}」）")
@@ -653,6 +682,9 @@ def _extract_and_fill() -> None:
         sources["price_condition"] = (ex.condition, f"{CLAIM_TEXT_PREFIX}{ex.condition_text}")
         found_zh.append(f"{S['cond_' + ex.condition][0]}（「{ex.condition_text}」）")
         found_en.append(f"{S['cond_' + ex.condition][1]} (“{ex.condition_text}”)")
+    elif not ex.condition and cond_src is not None and cond_src[1].startswith(CLAIM_TEXT_PREFIX) and st.session_state["f_price_condition"] == cond_src[0]:
+        st.session_state["f_price_condition"] = "end"  # the earlier sentence's touch / close wording is gone
+        sources.pop("price_condition")
     st.session_state["prefill_sources"] = sources
     st.session_state["extraction"] = ex
     zh_text = S["recognized"][0].format(items="；".join(found_zh)) if found_zh else S["recognized_none"][0]
@@ -660,7 +692,10 @@ def _extract_and_fill() -> None:
     if ex.notes_zh:
         zh_text += " " + " ".join(ex.notes_zh)
         en_text += " " + " ".join(ex.notes_en)
-    _msg("extract_msg", "warning" if ex.notes_zh and not found_zh else "info", (zh_text, en_text))
+    if kept_zh:
+        zh_text += " " + S["kept_user"][0].format(items="；".join(kept_zh))
+        en_text += " " + S["kept_user"][1].format(items="; ".join(kept_en))
+    _msg("extract_msg", "warning" if (ex.notes_zh and not found_zh) or kept_zh else "info", (zh_text, en_text))
     if st.session_state["f_ticker"].strip():
         _prefill()
     # "doubles" / "10x": the target is the reference price times the factor
@@ -836,7 +871,8 @@ def bridge_unit(*, result_page: bool, warn: int) -> None:
         left.markdown(ck.bridge(zh(), sys_on=result_page, link=link, warn=warn, chips=chips), unsafe_allow_html=True)
         with right, st.container(horizontal=True, horizontal_alignment="right", vertical_alignment="center", gap="small"):
             if result_page:
-                st.button(t("back_new"), key="btn_new", on_click=_go, args=("home",))
+                st.button(t("back_edit"), key="btn_edit", on_click=_go, args=("home",), help=t("back_edit_help"))
+                st.button(t("back_new"), key="btn_new", on_click=_new_claim, help=t("back_new_help"))
             st.radio(t("view"), options=["new", "history"], format_func=labels({"new": S["view_new"], "history": S["view_history"]}), key="view",
                      horizontal=True, label_visibility="collapsed")
             st.radio(t("tube"), options=["grn", "amb"], format_func=lambda x: "GRN" if x == "grn" else "AMB", key="tube", horizontal=True,
@@ -1575,6 +1611,10 @@ def render_nar(result: CaseResult, key_suffix: str, anim: bool) -> None:
     n = result.narratives.get(lang())
     if n is None and result.narrative is not None and result.narrative.language == "both":  # written before v0.8
         n = result.narrative
+    stored = n
+    if n is not None:
+        n = recheck(n)  # stored verdicts can predate today's rules; checking again costs no API call
+    rechecked = n is not None and stored is not None and (n.verified, n.unsupported) != (stored.verified, stored.unsupported)
     settings = get_service().settings
     model_kw = dict(model=settings.narrative_model, effort=settings.narrative_effort)
     if n is None or n.status != "ok":
@@ -1593,6 +1633,8 @@ def render_nar(result: CaseResult, key_suffix: str, anim: bool) -> None:
         st.caption(t("ai_button_help", **model_kw))
         return
     summary = t("ai_summary", ok=n.verified, total=n.total, bad=n.unsupported, model=n.model + (f" · effort {n.effort}" if n.effort else ""))
+    if rechecked:
+        summary += " · " + t("ai_rechecked", ok=stored.verified, total=stored.total)
     cost = estimate_cost(n.model, n.usage)
     if n.reused_from:
         summary += " · " + t("ai_reused", case=n.reused_from[:8])

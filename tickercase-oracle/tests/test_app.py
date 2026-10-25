@@ -63,7 +63,7 @@ def test_example_confirm_run_and_stale_result_hidden(app_env):
     assert result.probability is not None and result.probability.status == "ok"  # P/S example asks for it
 
     # back on the console page, edit an input: confirmation becomes stale, old result is hidden, run disabled
-    button(at, "btn_new").click()
+    button(at, "btn_edit").click()
     run(at)
     assert "已确认" in texts(at) and any(b.key == "btn_open" for b in at.button)  # the report is still current
     at.text_input(key="f_target_price").set_value("120")
@@ -136,6 +136,77 @@ def test_claim_only_flow_reaches_a_verdict(app_env):
     assert prov["target_price"] == "user_input:claim"
 
 
+def test_out_of_range_horizon_shows_the_limit(app_env):
+    at = run(AppTest.from_file(APP))
+    at.radio(key="sec_mode").set_value("synthetic")
+    at.text_area(key="f_claim_text").set_value("SYNT reaches $100 in one day")
+    at.text_input(key="f_ticker").set_value("SYNT")
+    at.text_input(key="f_target_price").set_value("100")
+    at.text_input(key="f_horizon_years").set_value("0.003")
+    run(at)
+    button(at, "btn_prefill").click()
+    run(at)
+    assert "太短，最短约 1 个月" in texts(at)
+    at.text_input(key="f_horizon_years").set_value("12")
+    run(at)
+    assert "太长，最长 10 年" in texts(at)
+
+
+def _claim_fields(at):
+    return {k: at.session_state[f"f_{k}"] for k in ("claim_text", "ticker", "target_price", "horizon_years")}
+
+
+def test_new_claim_after_a_finished_case_starts_empty(app_env):
+    # ◀ NEW used to keep the old case's inputs, so a hand-edited horizon silently beat the new sentence
+    at = run(AppTest.from_file(APP))
+    at.radio(key="sec_mode").set_value("synthetic")
+    at.text_area(key="f_claim_text").set_value("SYNT reaches $100 by 2031")
+    run(at)
+    button(at, "btn_prefill").click()
+    run(at)
+    at.text_input(key="f_horizon_years").set_value("4")
+    run(at)
+    button(at, "btn_confirm").click()
+    run(at)
+    button(at, "btn_run").click()
+    run(at)
+    assert at.session_state["page"] == "result"
+    button(at, "btn_new").click()
+    run(at)
+    assert at.session_state["page"] == "home" and at.session_state["result"] is None
+    assert set(_claim_fields(at).values()) == {""} and at.session_state["sec_mode"] == "synthetic"
+    assert "已隐藏" not in texts(at)
+    at.text_area(key="f_claim_text").set_value("SYNT will trade at $600 in two years.")
+    run(at)
+    button(at, "btn_prefill").click()
+    run(at)
+    assert _claim_fields(at) | {"claim_text": ""} == {"claim_text": "", "ticker": "SYNT", "target_price": "600", "horizon_years": "2"}
+
+
+def test_replacing_the_sentence_drops_old_values_and_names_kept_ones(app_env):
+    at = run(AppTest.from_file(APP))
+    at.radio(key="sec_mode").set_value("synthetic")
+    at.text_area(key="f_claim_text").set_value("SYNT will trade at $100 in five years.")
+    run(at)
+    button(at, "btn_prefill").click()
+    run(at)
+    assert at.session_state["f_horizon_years"] == "5"
+    # a sentence without a time frame: the horizon read from the old sentence is cleared, not carried over
+    at.text_area(key="f_claim_text").set_value("SYNT will trade at $120.")
+    run(at)
+    button(at, "btn_prefill").click()
+    run(at)
+    assert at.session_state["f_horizon_years"] == "" and at.session_state["f_target_price"] == "120"
+    # a value the user typed stays, and the message says what the sentence would have given
+    at.text_input(key="f_horizon_years").set_value("4")
+    at.text_area(key="f_claim_text").set_value("SYNT will trade at $150 in two years.")
+    run(at)
+    button(at, "btn_prefill").click()
+    run(at)
+    assert at.session_state["f_horizon_years"] == "4" and at.session_state["f_target_price"] == "150"
+    assert "保留了你手动填写的" in texts(at) and "原文是 2" in texts(at)
+
+
 def test_user_assumption_is_not_overwritten_by_prefill(app_env):
     at = run(AppTest.from_file(APP))
     at.radio(key="sec_mode").set_value("synthetic")
@@ -158,7 +229,7 @@ def test_english_switch_and_history_view(app_env):
     at.radio(key="lang").set_value("en")
     run(at)
     assert any("Partially Supported" in m.value for m in at.markdown)
-    button(at, "btn_new").click()  # back to the console: the confirmation is shown there
+    button(at, "btn_edit").click()  # back to the console: the confirmation is shown there
     run(at)
     assert any("Confirmed" in s.value for s in at.success)
     at.radio(key="view").set_value("history")
@@ -386,3 +457,26 @@ def test_narrative_shows_current_language_and_reuse(app_env):
     run(at)
     page = "\n".join(str(m.value) for m in at.markdown) + "\n".join(str(c.value) for c in at.caption)
     assert "中文结论句" in page and "复用案例 aaaaaaaa" in page
+
+
+def test_stored_narrative_is_shown_with_todays_verdicts(app_env):
+    from datetime import datetime, timezone
+
+    from tickercase.models import Fact, Narrative, NarrativeSentence
+
+    at = run(AppTest.from_file(APP))
+    button(at, "btn_example_ps").click()
+    run(at)
+    button(at, "btn_confirm").click()
+    run(at)
+    button(at, "btn_run").click()
+    run(at)
+    facts = [Fact(id="F01", label_en="insider open-market sale value", label_zh="内部人卖出金额", value="1430996244.02", unit="USD")]
+    old = Narrative(status="ok", model="claude-opus-5-5", created_at=datetime(2026, 10, 5, tzinfo=timezone.utc), language="zh",
+                    sections={"divergences": [NarrativeSentence(zh="内部人卖出约 14.3 亿美元。", fact_ids=["F01"], status="unsupported",
+                                                                problems=["old rules"])]},
+                    facts=facts, total=1, verified=0, unsupported=1)
+    at.session_state["result"].narratives["zh"] = old
+    run(at)
+    page = " ".join(str(m.value) for m in at.markdown)
+    assert "1/1 句通过核对 · 0 句含无出处数字" in page and "已按当前核对规则重新核对（写成时为 0/1）" in page
