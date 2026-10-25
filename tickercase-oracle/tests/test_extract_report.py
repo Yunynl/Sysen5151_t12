@@ -31,6 +31,12 @@ def ex(text):
     ("SYNT 一年半后 120 美元", "SYNT", "120", None, "1.5"),
     ("BRK.B to $600 within 2 years", "BRK.B", "600", None, "2"),
     ("RKLB stock will reach $1.5k in 4 years", "RKLB", "1500", None, "4"),
+    # days and weeks are read with three decimals; validation then applies the one-month to ten-year range
+    ("NVDA 999天后涨到300", "NVDA", "300", None, "2.735"),
+    ("SYNT to $120 in 30 days", "SYNT", "120", None, "0.082"),
+    ("苹果两周内涨到250美元", "AAPL", "250", None, "0.038"),
+    ("TSLA within 6 weeks to $400", "TSLA", "400", None, "0.115"),
+    ("NVDA 一天内涨到 300", "NVDA", "300", None, "0.003"),
 ])
 def test_extraction(text, ticker, target, multiple, years):
     r = ex(text)
@@ -39,6 +45,23 @@ def test_extraction(text, ticker, target, multiple, years):
     assert r.target_multiple == (Decimal(multiple) if multiple else None)
     assert r.horizon_years == Decimal(years)
     assert r.ticker_text and (r.target_text or not (target or multiple))
+
+
+def test_common_word_tickers_need_capitals_and_the_sec_list():
+    listed = KNOWN | {"BE", "IT", "ON"}
+    known = lambda s: s in listed  # noqa: E731
+    r = extract_claim("BE will trade at $600 in five years.", today=TODAY, is_known_ticker=known)
+    assert r.ticker == "BE" and r.target_price == Decimal("600") and any("常用词" in n for n in r.notes_zh)
+    assert extract_claim("IT will hit $400 in 2 years", today=TODAY, is_known_ticker=known).ticker == "IT"
+    # another candidate wins; an all-capitals sentence or an unlisted word gives no ticker
+    assert extract_claim("ON second thought NVDA hits $300 in 3 years", today=TODAY, is_known_ticker=known).ticker == "NVDA"
+    assert extract_claim("BE WILL TRADE AT $600 IN FIVE YEARS", today=TODAY, is_known_ticker=known).ticker != "BE"
+    assert ex("BE will trade at $600 in five years.").ticker is None
+
+
+def test_someday_and_anniversary_are_not_durations():
+    assert ex("NVDA 总有一天到1000").horizon_years is None
+    assert ex("TSLA 十周年冲到500").horizon_years is None
 
 
 def test_missing_parts_are_reported_not_guessed():
