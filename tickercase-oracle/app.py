@@ -23,7 +23,7 @@ from tickercase import __version__
 from tickercase.config import REPO_ROOT, load_settings, write_env_value
 from tickercase.http_client import validate_user_agent
 from tickercase.models import VERDICT_DISPLAY_ZH, CaseResult, ClaimDraft, Confirmation, PlainReport, ReferenceSnapshot, Text
-from tickercase.narrative import estimate_cost
+from tickercase.narrative import estimate_cost, recheck
 from tickercase.oracle import event_move, p_end_above, p_touch, scenario
 from tickercase.providers.options import iv_at
 from tickercase.service import CLAIM_TEXT_PREFIX, DEFAULT_PREFIX, CaseService
@@ -43,7 +43,10 @@ S = {
     "language": ("语言", "Language"),
     "view": ("页面", "Page"), "view_new": ("CASE 观点", "CASE"), "view_history": ("HIST 历史", "HIST"),
     "tube": ("荧光颜色", "Phosphor"),
-    "back_new": ("◀ NEW 新观点", "◀ NEW claim"),
+    "back_edit": ("◀ EDIT 修改输入", "◀ EDIT inputs"),
+    "back_edit_help": ("回到输入页，保留这个案例的输入，改完重新确认即可。", "Back to the inputs of this case; change them and confirm again."),
+    "back_new": ("+ NEW 新观点", "+ NEW claim"),
+    "back_new_help": ("清空输入，开始一个新观点；这个案例保留在 HIST 里。", "Clear the inputs and start a new claim; this case stays in HIST."),
     "data_chip": ("数据源", "DATA"),
     "mode": ("DATA · 数据源模式", "DATA · data source"),
     "mode_help": ("实时数据会请求 SEC、行情和期权接口；合成示例使用虚构公司 SYNT 的数据。", "Live calls SEC, quote and option sources; the synthetic example uses the fictional company SYNT."),
@@ -74,6 +77,8 @@ S = {
     "need_ticker": ("先填写股票代码。", "Enter a ticker first."),
     "recognized": ("从原文识别：{items}", "Read from the claim: {items}"),
     "recognized_none": ("没有从原文识别出代码、目标价或时间。", "Nothing could be read from the claim."),
+    "kept_user": ("保留了你手动填写的：{items}。要改用原文的值，请先清空这些框再点识别。",
+                  "Kept the values you typed: {items}. To use the claim's values, clear those fields and read again."),
     "multiple_target": ("目标价 = 参考价 {ref} × {x}（原文「{text}」）", "Target = reference {ref} × {x} (from “{text}”)"),
     "condition": ("怎样算实现", "What counts as coming true"),
     "condition_help": ("期间触及：截止日前任何一天达到目标价就算，适合「冲到」「脉冲」这类说法。到期站上：截止日当天仍在目标价以上。",
@@ -92,7 +97,8 @@ S = {
     "g_claim": (("观点", "从句子里读出来的几项，最容易读错，请先看这里"), ("Claim", "Read from the sentence; the easiest to misread, so check these first")),
     "g_price": (("价格与股本", "公开数据，带来源与时间"), ("Price and shares", "Public data, with source and time")),
     "g_val": (("估值", "用哪种倍数、多少倍来估目标日的公司价值"), ("Valuation", "Which multiple, and how high, values the company at the target date")),
-    "g_extra": (("申报范围与附加项", "可选；漂移率和波动率只用于「原始数据」里的旧版概率参考"), ("Filing window and extras", "Optional; drift and volatility only feed the older model reference under Raw data")),
+    "g_extra": (("同类篮子、申报范围与附加项", "可选；同类篮子用来拆分近期涨跌，漂移率和波动率只用于「原始数据」里的旧版概率参考"),
+                ("Peers, filing window and extras", "Optional; the peer basket splits the recent move, drift and volatility only feed the older model reference under Raw data")),
     "you_changed": ("你修改了这一项 · 原值 {v}", "you changed this · was {v}"),
     "method": ("估值方法", "Valuation method"), "method_help": ("假设：目标日期用哪种倍数估值。", "Assumption: which multiple values the company at the target date."),
     "m_ps": ("市销率 P/S", "Price-to-sales (P/S)"), "m_pe": ("市盈率 P/E", "Price-to-earnings (P/E)"),
@@ -119,7 +125,7 @@ S = {
     "open_report": ("▶ 打开当前报告", "▶ Open the current report"),
     "ready": ("这组输入已经生成过报告。", "These inputs already have a report."),
     # console: data and methods used, recent tapes
-    "u_feed": ("UNIT 03 · FEED 采用的信息 · 8 CH", "UNIT 03 · FEED data we use · 8 CH"),
+    "u_feed": ("UNIT 03 · FEED 采用的信息 · 10 CH", "UNIT 03 · FEED data we use · 10 CH"),
     "u_mth": ("UNIT 04 · MTH 四种方法 · 互相核对", "UNIT 04 · MTH four methods · cross-checked"),
     "u_hist": ("UNIT 05 · HIST 最近的磁带", "UNIT 05 · HIST recent tapes"),
     "hist_hint": ("▶ PLAY 直接打开这盘磁带的报告", "▶ PLAY opens that tape's report"),
@@ -130,13 +136,15 @@ S = {
     "kln_src": ("YAHOO · 截至 {d} 收盘 · 与案例同一份数据", "YAHOO · to the {d} close · the same data as the case"),
     "kln_none": ("这份报告没有行情数据，画不出 K 线。", "This report has no price data, so there is no K-line."),
     "u_prb": ("UNIT 03 · PRB 概率 ← MTH 四种方法", "UNIT 03 · PRB probability ← MTH four methods"),
-    "u_feed_r": ("UNIT 04 · FEED 数据源读数 · 8 CH", "UNIT 04 · FEED source readings · 8 CH"),
-    "u_rpt": ("UNIT 05 · RPT 报告 · 5 CH", "UNIT 05 · RPT report · 5 CH"),
+    "u_mkt": ("UNIT 04 · MKT 市场结构 · Δ 变化归因", "UNIT 04 · MKT market structure · Δ change"),
+    "u_cat": ("UNIT 05 · CAT 催化剂档案", "UNIT 05 · CAT catalyst register"),
+    "u_feed_r": ("UNIT 06 · FEED 数据源读数 · 10 CH", "UNIT 06 · FEED source readings · 10 CH"),
+    "u_rpt": ("UNIT 07 · RPT 报告 · 5 CH", "UNIT 07 · RPT report · 5 CH"),
     "rpt_note": ("换台雪花 0.5 秒 · 内容随即出现", "0.5 s of snow per channel, then the content"),
     "tabs": (["CH1 报告", "CH2 情景推演", "CH3 价位与方法", "CH4 基本面核查", "CH5 原始数据"], ["CH1 Report", "CH2 Scenario", "CH3 Levels & methods", "CH4 Fundamentals", "CH5 Raw data"]),
-    "u_sig": ("UNIT 06 · SIG 信号", "UNIT 06 · SIG signals"),
+    "u_sig": ("UNIT 08 · SIG 信号", "UNIT 08 · SIG signals"),
     "u_fnd": ("FND · 基本面结论", "FND · FUNDAMENTALS"), "fnd_more": ("CH4 详情 ▲", "CH4 details ▲"),
-    "u_nar": ("UNIT 07 · NAR 叙述 · DOT-MATRIX", "UNIT 07 · NAR narrative · DOT-MATRIX"),
+    "u_nar": ("UNIT 09 · NAR 叙述 · DOT-MATRIX", "UNIT 09 · NAR narrative · DOT-MATRIX"),
     "prob_none": ("数据不足，无法计算概率", "Not enough data to compute a probability"),
     "target": ("目标价", "Target"), "now_price": ("现价", "Now"),
     "r_layers": ("数据分层", "Evidence by layer"), "r_analysis": ("交叉验证", "Cross-check"),
@@ -149,6 +157,37 @@ S = {
     "r_mon_cols": (("信号", "当前", "触发条件", "含义"), ("Signal", "Now", "Trigger", "Meaning")),
     "r_time_cols": (("时间", "要看什么", "说明"), ("When", "What", "Note")),
     "r_none": ("这份报告没有分层内容（由旧版本生成）。", "This report has no layers (made by an older version)."),
+    # catalyst register
+    "cat_chip": ("Claude 提议 · 代码核对 · 你确认", "Claude proposes · code checks · you confirm"),
+    "cat_up": ("截止日前已知的日期", "Known dates before the deadline"),
+    "cat_up_none": ("截止日前没有已知日期：既没有财报日期，档案里也没有带时间的催化剂。", "No known dates before the deadline: no earnings date and no dated catalyst in the register."),
+    "cat_use": ("→ 情景", "→ scenario"),
+    "cat_use_help": ("把这个日期和期权定价的幅度填进 RPT · CH2 情景推演。", "Fills this date and the option-priced move into RPT · CH2 Scenario."),
+    "cat_used": ("已填入 RPT · CH2 情景推演：{name}，{day}。", "Filled into RPT · CH2 Scenario: {name}, {day}."),
+    "cat_reg": ("档案 · 已确认的催化剂", "Register · confirmed catalysts"),
+    "cat_reg_none": ("这只股票的档案还是空的。按下面的 SCAN，让 Claude 根据 8-K 新闻稿和新闻标题提出催化剂，核对后由你确认。",
+                     "This stock's register is empty. Press SCAN below: Claude proposes catalysts from 8-K press releases and headlines, code checks them, you confirm."),
+    "cat_reg_note": ("档案按股票保存（data/catalysts），以后每次 RUN 都会读入并补算反应。反应 = 事件当天和次日的涨跌，以及扣除大盘和同类后的个股部分。",
+                     "The register is kept per stock (data/catalysts); every later RUN reads it and measures new reactions. Reaction = the move on the event day and the next, and the part the market and the peers do not explain."),
+    "cat_manage": ("管理档案", "Manage the register"),
+    "cat_remove": ("移除 {id}", "Remove {id}"),
+    "cat_scan": ("SCAN 生成催化剂提议", "SCAN · propose catalysts"),
+    "cat_scan_help": ("读取近一年的 8-K 新闻稿和新闻标题，调用两次 Claude（{model}，effort {effort}）：先找主题和检索词，再按主题检索两年的新闻并写出催化剂和时间线。按用量计费。",
+                      "Reads a year of 8-K press releases and headlines and makes two Claude calls ({model}, effort {effort}): themes and search words first, then a two-year news search per theme and the catalysts with their timelines. Billed by usage."),
+    "cat_rescan": ("RESCAN 重新提议", "RESCAN · propose again"),
+    "cat_running": ("正在生成催化剂提议…", "Proposing catalysts…"),
+    "cat_step": {"filings": ("读取 8-K 新闻稿", "reading 8-K press releases"), "news": ("取新闻标题", "fetching headlines"),
+                 "themes": ("Claude：找主题和检索词", "Claude: themes and search words"), "catalysts": ("Claude：写催化剂和时间线", "Claude: catalysts and timelines"),
+                 "reactions": ("计算每个事件的市场反应", "measuring each event's reaction")},
+    "cat_prop": ("提议 · 待你确认", "Proposal · waiting for you"),
+    "cat_prop_meta": ("{n} 项 · {src} 条来源 · 检索词：{themes} · {model}", "{n} items · {src} sources · searched: {themes} · {model}"),
+    "cat_accept": ("接受 {id}", "Accept {id}"),
+    "cat_confirm": ("CONFIRM 写入档案", "CONFIRM · write to the register"),
+    "cat_discard": ("DISCARD 放弃这份提议", "DISCARD this proposal"),
+    "cat_decided": ("这份提议已于 {t} 处理：接受 {n} 项。", "This proposal was decided at {t}: {n} accepted."),
+    "cat_failed": ("催化剂提议未生成：", "Catalysts not proposed: "),
+    "cat_heads": ("近期新闻标题", "Recent headlines"),
+    "cat_rule": ("未通过核对的提议默认不勾选。接受的进入档案；没接受的新名称会记下来，以后不再提议。", "Proposals that fail a check start unticked. Accepted ones join the register; new names you do not accept are remembered and not proposed again."),
     # AI narrative
     "ai_intro": ("由 Claude 根据本报告的事实表撰写，每句话的数字都会逐个核对出处。", "Written by Claude from this report's fact table; every number in every sentence is checked against its source."),
     "ai_button": ("PRINT 生成 AI 叙述", "PRINT · write AI narrative"),
@@ -158,6 +197,7 @@ S = {
     "ai_summary": ("{ok}/{total} 句通过核对 · {bad} 句含无出处数字 · {model}", "{ok}/{total} sentences pass · {bad} with unsourced numbers · {model}"),
     "ai_usage": ("输入 {inp:,} · 输出 {out:,} token · 约 ${cost:.3f}", "{inp:,} input · {out:,} output tokens · about ${cost:.3f}"),
     "ai_reused": ("复用案例 {case} 中相同事实的叙述，这次没有调用 API", "Reused from case {case} with the same facts; no API call this time"),
+    "ai_rechecked": ("已按当前核对规则重新核对（写成时为 {ok}/{total}）", "checked again with today's rules (it scored {ok}/{total} when written)"),
     "ai_failed": ("AI 叙述未生成：", "AI narrative not written: "),
     "ai_facts": ("事实表与核对明细", "Fact table and check details"),
     "ai_legend": ("核 数字与引用的事实一致 · ○ 无数字的解释 · ⚠ 数字存在但引用了别的事实 · ✖ 数字找不到出处",
@@ -236,6 +276,10 @@ S = {
     # raw data
     "facts_title": ("SEC 已披露财务数据", "SEC reported financials"), "data_table": ("数据表", "Data table"),
     "price_title": ("股价历史", "Price history"), "filings_title": ("SEC 申报记录", "SEC filings"),
+    "mkt_title": ("市场结构 · 逐日拆分", "Market structure · day by day"),
+    "mkt_raw": ("大盘贝塔 {b} · 同类贝塔 {bp} · 同类篮子自身的大盘贝塔 {c} · R² {r2} · 日残差 {sd} · 估计窗 {e0} 至 {e1}。对数收益；本股一列是简单收益。",
+                "market beta {b} · peer beta {bp} · the basket's own market beta {c} · R² {r2} · daily residual {sd} · estimation window {e0} to {e1}. Log returns; the stock column is a simple return."),
+    "mkt_sources": ("这一步读取的数据", "Data read by this step"),
     "filings_note": ("申报记录只有元数据，本版本不读取正文。", "Filing records are metadata only; documents are not read in this version."),
     "no_public": ("本次没有取到公开数据，见下方运行记录中的数据错误。", "No public data in this run; see the data errors in the run log below."),
     "prob_model": ("旧版概率参考（按你填写的漂移率）", "Older model reference (your drift)"),
@@ -258,7 +302,8 @@ FIELD_META = {
     "claim_text": ("观点原文", "Claim", ("例如：RKLB 3 年内冲到 200", "e.g. NVDA will hit $300 in 3 years"), "要核验的原始说法，原样记录。", "The claim as stated, recorded verbatim."),
     "ticker": ("股票代码", "Ticker", "AAPL", "美股代码。", "US ticker."),
     "target_price": ("目标价", "Target price", "100", "观点给出的目标价格。", "The price the claim names."),
-    "horizon_years": ("时间（年）", "Horizon (years)", "3", "观点在多少年内或多少年后兑现，可填小数。", "Years until the claim should hold; decimals allowed."),
+    "horizon_years": ("时间（年）", "Horizon (years)", "3", "观点在多少年内或多少年后兑现，可填小数；范围约 1 个月（0.08）到 10 年。",
+                      "Years until the claim should hold; decimals allowed, from about one month (0.08) to 10 years."),
     "currency": ("币种", "Currency", "USD", "3 位 ISO 代码。SEC 财务数据按 USD 比较。", "3-letter ISO code. SEC amounts are compared in USD."),
     "reference_price": ("参考价", "Reference price", "50", "参考值：当前或某日的股价。", "Reference value: the price on a date."),
     "reference_price_date": ("参考价日期", "Reference date", "YYYY-MM-DD", "参考价对应的交易日。", "Trading day of the reference price."),
@@ -274,6 +319,9 @@ FIELD_META = {
     "filings_since": ("申报检索起始日（可选）", "Filings since (optional)", "YYYY-MM-DD", "检查 SEC 申报覆盖范围的起点。", "Start of the SEC filing window."),
     "probability_drift": ("年化漂移率 μ（可选）", "Yearly drift μ (optional)", "0.07", "0.07 = 7%。留空则不计算旧版概率参考。", "0.07 = 7%. Leave empty to skip the older model reference."),
     "probability_volatility": ("年化波动率 σ（可选）", "Yearly volatility σ (optional)", "", "留空时使用历史波动率。", "Empty uses historical volatility."),
+    "peer_tickers": ("同类篮子（可选）", "Peer basket (optional)", "ASTS, IONQ",
+                     "用来把近期涨跌拆成大盘、同类和个股三部分。默认取 Yahoo 的相似股票；与本股日相关系数低于 0.3 的不放进篮子。最多 8 只，用逗号分开。",
+                     "Splits the recent move into market, peers and own. Defaults to Yahoo's similar stocks; stocks whose daily correlation with this one is below 0.3 are left out. Up to 8, comma-separated."),
     "price_condition": ("怎样算实现", "What counts as coming true", "", "", ""),
 }
 TEXT_FIELDS = [n for n in FIELD_META if n != "price_condition"]
@@ -318,6 +366,9 @@ ISSUE_ZH = {
     "invalid_ticker": "{f}：格式不正确", "invalid_currency": "{f}：须为 3 位字母代码",
     "currency_mismatch": "{f}：与价格币种不一致，不做汇率换算", "unsupported_method": "{f}：只能是 P/S 或 P/E",
     "out_of_range": "{f}：超出允许范围", "unknown_field": "{f}：包含未知字段", "unsupported_mode": "{f}：选项无效",
+    "horizon_too_short": "{f}：太短，最短约 1 个月（0.08 年）；更短的期限无法用月度股价和年度基础比率评估",
+    "horizon_too_long": "{f}：太长，最长 10 年；更长的期限超出基础比率的数据窗口和期权到期日",
+    "deadline_passed": "{f}：参考价日期加上这个期限，截止日已经过去",
 }
 MISSING_ZH = {
     "base_annual_metric": "未填基期指标，不计算相对基期的增速",
@@ -329,10 +380,11 @@ STEP_LABELS = {
     "options": ("期权链", "Option chain"), "risk_free_rate": ("美债利率", "Treasury yield"), "price_base_rate": ("本股历史涨幅", "Own price history"),
     "benchmarks": ("大盘对标", "Benchmarks"), "base_rate": ("同规模公司基准率", "Peer base rate"), "insiders": ("内部人交易", "Insider trades"),
     "prediction_markets": ("预测市场", "Prediction markets"), "fear_greed": ("恐惧贪婪指数", "Fear & Greed"),
+    "market_structure": ("市场结构", "Market structure"), "news": ("新闻标题", "Headlines"), "earnings_date": ("财报日期", "Earnings date"),
 }
 TONE_OF_ROW = {"good": "good", "bad": "bad", "missing": "neutral", "neutral": "neutral"}
 NARR_BADGE = {"verified": "✔", "qualitative": "○", "cited_elsewhere": "⚠", "unsupported": "✖"}
-JUMPS = (("u-clm", "CLM"), ("u-kln", "KLN"), ("u-prb", "PRB"), ("u-feed", "FEED"), ("u-rpt", "RPT"), ("u-sig", "SIG"), ("u-nar", "NAR"))
+JUMPS = (("u-clm", "CLM"), ("u-kln", "KLN"), ("u-prb", "PRB"), ("u-mkt", "MKT"), ("u-cat", "CAT"), ("u-feed", "FEED"), ("u-rpt", "RPT"), ("u-sig", "SIG"), ("u-nar", "NAR"))
 KLINE_HEIGHT = 600
 
 
@@ -540,6 +592,15 @@ def _clear_form() -> None:
     _reset_confirmation()
 
 
+def _new_claim() -> None:
+    """◀ NEW starts from an empty form; the finished case stays in HIST and settings (mode, language, AI) are kept."""
+    _clear_form()
+    st.session_state["extraction"] = None
+    st.session_state["result"] = None
+    st.session_state["run_error"] = None
+    st.session_state["page"] = "home"
+
+
 def _metric_suggestion(snap: ReferenceSnapshot, method: str):
     return snap.revenue_suggestion if method == "price_to_sales" else snap.net_income_suggestion
 
@@ -593,6 +654,7 @@ def _prefill() -> None:
     st.session_state["prefill_sources"] = sources
     defaults = []
     for name, sug in (("valuation_multiple", _multiple_suggestion(snap, method)),
+                      ("peer_tickers", snap.assumption_suggestions.get("peer_tickers")),
                       ("filings_since", snap.assumption_suggestions.get("filings_since"))):
         if sug is not None and _is_untouched(name):  # assumptions only fill empty or untouched fields
             _apply(name, sug, sources)
@@ -637,12 +699,22 @@ def _extract_and_fill() -> None:
         return
     ex = get_service().extract(text, mode=st.session_state["sec_mode"])
     sources = dict(st.session_state["prefill_sources"])
-    found_zh, found_en = [], []
+    found_zh, found_en, kept_zh, kept_en = [], [], [], []
     for name, value, src in (("ticker", ex.ticker, ex.ticker_text), ("target_price", ex.target_price, ex.target_text),
                              ("horizon_years", ex.horizon_years, ex.horizon_text)):
-        if value is None or not _is_untouched(name):
+        current, old = st.session_state[f"f_{name}"].strip(), sources.get(name)
+        if value is None:
+            # a value read from an earlier sentence does not belong to this one
+            if old is not None and old[1].startswith(CLAIM_TEXT_PREFIX) and current == old[0]:
+                st.session_state[f"f_{name}"] = ""
+                sources.pop(name)
             continue
         val = format(value.normalize(), "f") if isinstance(value, Decimal) else str(value)
+        if not _is_untouched(name):
+            if current != val:  # the user's own entry wins, but say so instead of skipping it silently
+                kept_zh.append(f"{FIELD_META[name][0]} {current}（原文是 {val}）")
+                kept_en.append(f"{FIELD_META[name][1]} {current} (the claim says {val})")
+            continue
         st.session_state[f"f_{name}"] = val
         sources[name] = (val, f"{CLAIM_TEXT_PREFIX}{src}")
         found_zh.append(f"{FIELD_META[name][0]} {val}（「{src}」）")
@@ -653,6 +725,9 @@ def _extract_and_fill() -> None:
         sources["price_condition"] = (ex.condition, f"{CLAIM_TEXT_PREFIX}{ex.condition_text}")
         found_zh.append(f"{S['cond_' + ex.condition][0]}（「{ex.condition_text}」）")
         found_en.append(f"{S['cond_' + ex.condition][1]} (“{ex.condition_text}”)")
+    elif not ex.condition and cond_src is not None and cond_src[1].startswith(CLAIM_TEXT_PREFIX) and st.session_state["f_price_condition"] == cond_src[0]:
+        st.session_state["f_price_condition"] = "end"  # the earlier sentence's touch / close wording is gone
+        sources.pop("price_condition")
     st.session_state["prefill_sources"] = sources
     st.session_state["extraction"] = ex
     zh_text = S["recognized"][0].format(items="；".join(found_zh)) if found_zh else S["recognized_none"][0]
@@ -660,7 +735,10 @@ def _extract_and_fill() -> None:
     if ex.notes_zh:
         zh_text += " " + " ".join(ex.notes_zh)
         en_text += " " + " ".join(ex.notes_en)
-    _msg("extract_msg", "warning" if ex.notes_zh and not found_zh else "info", (zh_text, en_text))
+    if kept_zh:
+        zh_text += " " + S["kept_user"][0].format(items="；".join(kept_zh))
+        en_text += " " + S["kept_user"][1].format(items="; ".join(kept_en))
+    _msg("extract_msg", "warning" if (ex.notes_zh and not found_zh) or kept_zh else "info", (zh_text, en_text))
     if st.session_state["f_ticker"].strip():
         _prefill()
     # "doubles" / "10x": the target is the reference price times the factor
@@ -742,6 +820,48 @@ def _narrate(key_suffix: str, force: bool = False) -> None:
     if result is None:
         return
     get_service().narrate(result, language=lang(), force=force)
+
+
+def _case_of(key_suffix: str) -> Optional[CaseResult]:
+    return st.session_state["result"] if key_suffix == "current" else st.session_state["history_selected"]
+
+
+def _case_mode(result: CaseResult) -> str:
+    """The data mode a case ran in, so a proposal reads the same kind of data (live, replay or synthetic)."""
+    modes = {result.data_modes.get(k, "") for k in ("market_prices", "sec_filings")}
+    return "synthetic" if "synthetic" in modes else "replay" if "replay" in modes else "live"
+
+
+def _use_catalyst(key_suffix: str, name: str, day, move: Optional[float]) -> None:
+    result = _case_of(key_suffix)
+    if result is None:
+        return
+    lo, hi = result.created_at.date() + timedelta(days=1), ck.deadline_of(result)
+    st.session_state[f"sc_name_{key_suffix}"] = name
+    st.session_state[f"sc_date_{key_suffix}"] = min(max(day, lo), hi)
+    if move is not None:
+        _use_market_move(key_suffix, move)
+    st.session_state[f"cat_msg_{key_suffix}"] = (name, str(day))
+
+
+def _confirm_catalysts(key_suffix: str) -> None:
+    result = _case_of(key_suffix)
+    if result is None or result.catalyst_proposal is None:
+        return
+    accepted = [c.id for c in result.catalyst_proposal.catalysts if st.session_state.get(f"cat_acc_{key_suffix}_{c.id}")]
+    get_service().confirm_catalysts(result, accepted)
+
+
+def _discard_proposal(key_suffix: str) -> None:
+    result = _case_of(key_suffix)
+    if result is not None and result.catalyst_proposal is not None:
+        get_service().confirm_catalysts(result, [])
+
+
+def _remove_catalyst(key_suffix: str, catalyst_id: str) -> None:
+    result = _case_of(key_suffix)
+    if result is not None:
+        get_service().remove_catalyst(result, catalyst_id)
 
 
 def _go(page: str) -> None:
@@ -836,7 +956,8 @@ def bridge_unit(*, result_page: bool, warn: int) -> None:
         left.markdown(ck.bridge(zh(), sys_on=result_page, link=link, warn=warn, chips=chips), unsafe_allow_html=True)
         with right, st.container(horizontal=True, horizontal_alignment="right", vertical_alignment="center", gap="small"):
             if result_page:
-                st.button(t("back_new"), key="btn_new", on_click=_go, args=("home",))
+                st.button(t("back_edit"), key="btn_edit", on_click=_go, args=("home",), help=t("back_edit_help"))
+                st.button(t("back_new"), key="btn_new", on_click=_new_claim, help=t("back_new_help"))
             st.radio(t("view"), options=["new", "history"], format_func=labels({"new": S["view_new"], "history": S["view_history"]}), key="view",
                      horizontal=True, label_visibility="collapsed")
             st.radio(t("tube"), options=["grn", "amb"], format_func=lambda x: "GRN" if x == "grn" else "AMB", key="tube", horizontal=True,
@@ -976,6 +1097,7 @@ def render_groups() -> None:
         field("base_metric_period", c[1])
     with b, st.container(key="g-extra"):
         group("g_extra")
+        field("peer_tickers")
         field("filings_since")
         c = st.columns(2)
         field("probability_drift", c[0])
@@ -1177,7 +1299,8 @@ def tab_scenario(result: CaseResult, key_suffix: str) -> None:
     c1, c2 = st.columns([2, 1])
     c1.text_input(t("sc_event"), key=f"sc_name_{k}", placeholder=t("sc_event_ph"))
     default_date = min(today + timedelta(days=182), o.target_date - timedelta(days=1))
-    ev_date = c2.date_input(t("sc_date"), value=default_date, min_value=today + timedelta(days=1), max_value=o.target_date, key=f"sc_date_{k}")
+    st.session_state.setdefault(f"sc_date_{k}", default_date)
+    ev_date = c2.date_input(t("sc_date"), min_value=today + timedelta(days=1), max_value=o.target_date, key=f"sc_date_{k}")
 
     with st.container(border=True):
         st.markdown(f"**{t('sc_market')}**")
@@ -1498,6 +1621,17 @@ def tab_raw(result: CaseResult, key_suffix: str) -> None:
         close = f"{float(market.last_close):,.2f}"
         st.caption(f"最新收盘 {close}（{market.last_date}），历史年化波动率 {vol}；K 线见 UNIT 02。" if zh()
                    else f"Latest close {close} ({market.last_date}); historical volatility {vol}. The K-line is in UNIT 02.")
+    if result.structure is not None:
+        stc = result.structure
+        html_block(f'<div class="tc-h">{esc(t("mkt_title"))} · {stc.window_start} → {stc.window_end}</div>')
+        st.caption(t("mkt_raw", b=f"{stc.beta_market:.3f}", bp="—" if stc.beta_peers is None else f"{stc.beta_peers:.3f}",
+                     c="—" if stc.peers_market_beta is None else f"{stc.peers_market_beta:.3f}", r2=f"{stc.r_squared:.3f}",
+                     sd=f"{stc.residual_sd * 100:.2f}%", e0=stc.estimation_start, e1=stc.estimation_end))
+        st.dataframe([{"day": d.day.isoformat(), "stock": round(d.stock, 5), "market_log": round(d.market, 5), "peers_log": round(d.peers, 5),
+                       "own_log": round(d.own, 5), "flagged": d.flagged, "filings": "; ".join(d.filings)} for d in stc.days], hide_index=True)
+        with st.expander(t("mkt_sources")):
+            for u in stc.source_urls:
+                st.caption(u)
     if result.coverage is not None:
         html_block(f'<div class="tc-h">{esc(t("filings_title"))}</div>')
         (st.warning if result.coverage.coverage_gap else st.caption)(pick(result.coverage.message, result.coverage.message_zh))
@@ -1558,6 +1692,77 @@ def render_model_probability(result: CaseResult) -> None:
 # ------------------------------------------------------------------ report page units
 
 
+def render_cat(result: CaseResult, key_suffix: str) -> None:
+    z, k = zh(), key_suffix
+    html_block(ck.unit_head(t("u_cat"), ck.chip(t("cat_chip")), "u-cat"))
+    settings = get_service().settings
+    model_kw = dict(model=settings.narrative_model, effort=settings.narrative_effort)
+    # known dates before the deadline
+    html_block(ck.sub_head(t("cat_up")))
+    rows = ck.upcoming_rows(result, z)
+    if not rows:
+        st.caption(t("cat_up_none"))
+    for i, (row, data) in enumerate(rows):
+        c = st.columns([7, 1], vertical_alignment="center")
+        c[0].markdown(row, unsafe_allow_html=True)
+        if result.oracle is not None:
+            c[1].button(t("cat_use"), key=f"cat_use_{k}_{i}", help=t("cat_use_help"), on_click=_use_catalyst, args=(k, data["name"], data["day"], data["move"]),
+                        width="stretch")
+    used = st.session_state.get(f"cat_msg_{k}")
+    if used:
+        st.success(t("cat_used", name=used[0], day=used[1]))
+    # the confirmed register
+    html_block(ck.sub_head(t("cat_reg")))
+    reg = result.catalysts
+    if reg is None or not reg.catalysts:
+        st.caption(t("cat_reg_none"))
+    else:
+        html_block('<div class="tc-cats">' + "".join(ck.catalyst_card(c, z) for c in reg.catalysts) + "</div>")
+        st.caption(t("cat_reg_note"))
+        with st.expander(t("cat_manage")):
+            for c in reg.catalysts:
+                st.button(t("cat_remove", id=c.id) + f" · {c.name_zh if z and c.name_zh else c.name_en}", key=f"cat_rm_{k}_{c.id}",
+                          on_click=_remove_catalyst, args=(k, c.id))
+    # the proposal
+    prop = result.catalyst_proposal
+    if prop is not None and prop.status == "ok" and prop.decided_at is None:
+        html_block(ck.sub_head(t("cat_prop")))
+        cost = estimate_cost(prop.model, prop.usage)
+        st.caption(t("cat_prop_meta", n=len(prop.catalysts), src=len(prop.sources), themes=", ".join(prop.themes) or "—", model=prop.model)
+                   + (" · " + t("ai_usage", inp=prop.usage.get("input_tokens", 0), out=prop.usage.get("output_tokens", 0), cost=cost) if cost is not None else ""))
+        st.caption(t("cat_rule"))
+        for c in prop.catalysts:
+            st.session_state.setdefault(f"cat_acc_{k}_{c.id}", not c.problems)
+            st.checkbox(t("cat_accept", id=c.id), key=f"cat_acc_{k}_{c.id}")
+            html_block(ck.catalyst_card(c, z, proposed=True))
+        if prop.error:
+            st.caption("⚠ " + prop.error)
+        b = st.columns([2, 2, 3])
+        b[0].button(t("cat_confirm"), key=f"cat_confirm_{k}", type="primary", on_click=_confirm_catalysts, args=(k,), width="stretch")
+        b[1].button(t("cat_discard"), key=f"cat_discard_{k}", on_click=_discard_proposal, args=(k,), width="stretch")
+    else:
+        if prop is not None and prop.status != "ok":
+            st.warning(t("cat_failed") + (prop.error or prop.status))
+        elif prop is not None and prop.decided_at is not None:
+            st.caption(t("cat_decided", t=f"{prop.decided_at:%Y-%m-%d %H:%M} UTC", n=len(prop.accepted)))
+        no_key = not settings.anthropic_api_key
+        if no_key:
+            st.caption(t("ai_missing"))
+        label = t("cat_scan") if prop is None else t("cat_rescan")
+        if st.button(label, key=f"cat_scan_{k}", type="primary" if prop is None else "secondary", disabled=no_key, help=t("cat_scan_help", **model_kw)):
+            steps = S["cat_step"]
+            with st.status(t("cat_running"), expanded=True) as box:
+                def note(step: str) -> None:
+                    name, _, term = step.partition(":")
+                    label = (("检索：" if z else "searching: ") + term) if name == "search" else steps.get(name, (name, name))[0 if z else 1]
+                    box.write("· " + label)
+                get_service().propose_catalysts(result, mode=_case_mode(result), progress=note)
+            st.rerun()
+        st.caption(t("cat_scan_help", **model_kw))
+    with st.expander(t("cat_heads")):
+        html_block(ck.headlines_html(result.news, z))
+
+
 def render_kline(result: CaseResult) -> None:
     v = result.confirmed_claim.values
     m = result.market
@@ -1575,6 +1780,10 @@ def render_nar(result: CaseResult, key_suffix: str, anim: bool) -> None:
     n = result.narratives.get(lang())
     if n is None and result.narrative is not None and result.narrative.language == "both":  # written before v0.8
         n = result.narrative
+    stored = n
+    if n is not None:
+        n = recheck(n)  # stored verdicts can predate today's rules; checking again costs no API call
+    rechecked = n is not None and stored is not None and (n.verified, n.unsupported) != (stored.verified, stored.unsupported)
     settings = get_service().settings
     model_kw = dict(model=settings.narrative_model, effort=settings.narrative_effort)
     if n is None or n.status != "ok":
@@ -1593,6 +1802,8 @@ def render_nar(result: CaseResult, key_suffix: str, anim: bool) -> None:
         st.caption(t("ai_button_help", **model_kw))
         return
     summary = t("ai_summary", ok=n.verified, total=n.total, bad=n.unsupported, model=n.model + (f" · effort {n.effort}" if n.effort else ""))
+    if rechecked:
+        summary += " · " + t("ai_rechecked", ok=stored.verified, total=stored.total)
     cost = estimate_cost(n.model, n.usage)
     if n.reused_from:
         summary += " · " + t("ai_reused", case=n.reused_from[:8])
@@ -1630,6 +1841,12 @@ def render_result_units(result: CaseResult, key_suffix: str, *, anim: bool, star
         with st.container(key="u-c-prb"):
             html_block(ck.prb_unit(result, z, t("u_prb"), anim))
         keys.append("u-c-prb")
+    with st.container(key="u-c-mkt"):
+        html_block(ck.mkt_unit(result, z, t("u_mkt"), anim))
+    keys.append("u-c-mkt")
+    with st.container(key="u-c-cat"):
+        render_cat(result, key_suffix)
+    keys.append("u-c-cat")
     with st.container(key="u-o-feed"):
         html_block(ck.feeds_unit(result, z, t("u_feed_r"), anim))
     keys.append("u-o-feed")
