@@ -12,6 +12,7 @@ other data source is substituted for a failed one.
 
 from __future__ import annotations
 
+import math
 import uuid
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -35,21 +36,29 @@ from .models import (
     PriceBaseRate,
     ReferenceSnapshot,
     ReferenceSuggestion,
+    CatalystProposal,
 )
+from .catalysts import fill_reactions
 from .extract import extract_claim
 from .probability import probability_reference
 from .report import build_report
 from .providers.base import ProviderError
 from .oracle import build_oracle
 from .providers.insiders import InsiderProvider
-from .providers.market import CHART_URL, MONTHLY_URL, YahooChartProvider, monthly_closes, price_base_rate, price_touch_hits
+from .providers.market import CHART_URL, MONTHLY_URL, YahooChartProvider, monthly_closes, price_base_rate, price_touch_hits, yahoo_symbol
 from .providers.options import YahooOptionsProvider
+from .providers.calendar import EarningsCalendarProvider
+from .providers.filing_text import FilingTextProvider, recent_8ks
+from .providers.news import NewsProvider, company_query_name, google_query
+from .providers.peers import YahooPeersProvider
+from .providers.structure import MarketStructureProvider
 from .providers.sec_frames import SecFramesBaseRateProvider
 from .providers.sentiment import FearGreedProvider, PolymarketProvider
 from .providers.yahoo_auth import BROWSER_UA, YahooAuthedClient
 from .providers.sec import SecFilingProvider, SecFilingQuery
 from .providers.sec_facts import SecCompanyFactsProvider
-from .storage import CaseStore
+from .storage import CaseStore, CatalystStore
+from .structure import build_structure, find_previous, probability_change, reaction, shifted_range
 from .validation import TICKER_RE, fingerprint, validate_draft
 
 USER_INPUT_PROVENANCE = {
@@ -150,11 +159,14 @@ class CaseService:
         store: Optional[CaseStore] = None,
         now: Callable[[], datetime] = utcnow,
         today: Optional[Callable[[], date]] = None,
+        catalysts: Optional[CatalystStore] = None,
     ):
         self.settings = settings or load_settings()
         self._factory = fetcher_factory or (lambda mode, source: build_fetcher(mode, self.settings, source))
         self._fetchers: dict[tuple[str, str], JsonFetcher] = {}
         self.store = store
+        # the catalyst registers live next to the cases (data/cases -> data/catalysts) unless given
+        self.catalysts = catalysts or (CatalystStore(store.directory.parent / "catalysts") if store is not None else None)
         self.now = now
         self.today = today or (lambda: self.now().date())
 
@@ -293,8 +305,38 @@ class CaseService:
         if market_fetcher is not None:
             prediction = step("prediction_markets", PolymarketProvider.provider_id, lambda: PolymarketProvider(market_fetcher).search(claim.ticker, now=self.now()))
         sentiment = step("fear_greed", FearGreedProvider.provider_id, lambda: FearGreedProvider(self._fetcher(mode, "web")).snapshot())
+        company = self._company(facts, records, claim.ticker)
+        news = earnings = None
+        if market_fetcher is not None:
+            news = step("news", NewsProvider.provider_id, lambda: NewsProvider(market_fetcher).recent(claim.ticker, company))
+        earnings = step("earnings_date", EarningsCalendarProvider.provider_id, lambda: EarningsCalendarProvider(self._fetcher(mode, "options")).next_earnings(
+            claim.ticker, today=self.today()))
+        structure = fit = None
+        if market_fetcher is not None and market is not None:
+            peer_source = claim.field_sources.get("peer_tickers") or ("user input" if claim.peer_tickers else None)
+            built = step("market_structure", MarketStructureProvider.provider_id, lambda: build_structure(
+                MarketStructureProvider(market_fetcher).inputs(claim.ticker, claim.peer_tickers, peer_source=peer_source), records,
+                news=news.items if news else ()))
+            structure, fit = built if built is not None else (None, None)
+        register = self.catalysts.get(claim.ticker) if self.catalysts is not None else None
+        if register is not None and fit is not None:
+            fill_reactions(register.catalysts, lambda day: reaction(fit, day), today=self.today())
+            self.catalysts.save(register)
         oracle = build_oracle(claim, market=market, options=options, base_rate=base_rate, price_rate=price_rate,
                               risk_free=risk_free, today=self.today())
+        change = None
+        if structure is not None and oracle.spot:
+            monthly_url = MONTHLY_URL.format(symbol=yahoo_symbol(claim.ticker))
+            closes = None
+            if price_rate is not None:  # M4 is recounted at the shifted price from the same monthly closes
+                closes = self._guard(MARKET_PROVIDER_ID, mode, errors, lambda: monthly_closes(market_fetcher.get_json(monthly_url).payload, monthly_url))
+            structure.shifted = shifted_range(claim, oracle, oracle.spot * math.exp(-(structure.log_market + structure.log_peers)), market=market,
+                                              options=options, base_rate=base_rate, price_rate=price_rate, closes=closes, risk_free=risk_free,
+                                              today=self.today())
+        if self.store is not None and oracle.spot and market is not None:
+            previous = find_previous(self.store.list_cases(), claim, oracle, market_date=market.last_date, exclude=case_id)
+            if previous is not None:
+                change = probability_change(previous, oracle=oracle, fit=fit, today=self.today())
         report = build_report(claim, calculations, facts=facts, market=market, items=outcome.items, verdict=outcome.verdict,
                               rechecks=outcome.rechecks, probability=probability, today=self.today(), oracle=oracle, options=options,
                               base_rate=base_rate, price_rate=price_rate, benchmarks=benchmarks, insiders=insiders,
@@ -318,6 +360,9 @@ class CaseService:
             "base_rate": mode_of(base_rate is not None, {base_rate.data_mode.value} if base_rate else set()),
             "insiders": mode_of(insiders is not None, {insiders.data_mode.value} if insiders else set()),
             "fear_greed": mode_of(sentiment is not None, {sentiment.data_mode.value} if sentiment else set()),
+            "market_structure": mode_of(structure is not None, {structure.data_mode.value} if structure else set()),
+            "news": mode_of(news is not None, {news.data_mode.value} if news else set()),
+            "earnings_date": mode_of(earnings is not None, {earnings.data_mode.value} if earnings else set()),
             "analysis": f"deterministic {RULES_VERSION}",
         }
         if DataMode.SYNTHETIC.value in data_modes.values():
@@ -346,6 +391,11 @@ class CaseService:
             prediction_markets=prediction,
             sentiment=sentiment,
             oracle=oracle,
+            structure=structure,
+            change=change,
+            news=news,
+            earnings=earnings,
+            catalysts=register,
             data_steps=steps,
             provider_errors=errors,
             data_modes=data_modes,
@@ -388,6 +438,124 @@ class CaseService:
             out.append(BenchmarkReturn(symbol=symbol, label=label, start=d0, end=d1, total_return=total.quantize(Decimal("0.0001")),
                                        annual_return=annual.quantize(Decimal("0.0001")), data_mode=fetched.data_mode))
         return out
+
+    @staticmethod
+    def _company(facts, records, ticker: str) -> str:
+        name = (facts.company_name if facts is not None else None) or next((r.company_name for r in records if r.company_name), None)
+        return company_query_name(name, ticker)
+
+    # ---------------------------------------------------------------- catalysts (v0.12)
+
+    def _client(self):
+        import anthropic
+
+        return anthropic.Anthropic(api_key=self.settings.anthropic_api_key) if self.settings.anthropic_api_key else anthropic.Anthropic()
+
+    def _fit_for(self, result: CaseResult, mode: str):
+        """The factor fit of the case's stock and peers again (cached or replayed), for event reactions; None when it cannot be built."""
+        claim = result.confirmed_claim.values
+        errors: list[ProviderErrorRecord] = []
+        fetcher = self._guard(MARKET_PROVIDER_ID, mode, errors, lambda: self._fetcher(mode, "market"))
+        if fetcher is None:
+            return None
+        built = self._guard(MarketStructureProvider.provider_id, mode, errors, lambda: build_structure(
+            MarketStructureProvider(fetcher).inputs(claim.ticker, claim.peer_tickers)))
+        return built[1] if built is not None else None
+
+    def propose_catalysts(self, result: CaseResult, *, mode: str, client=None, progress: Optional[Callable[[str], None]] = None) -> CaseResult:
+        """Claude proposes catalysts from 8-K press releases and headlines; code checks them and measures reactions. Two paid calls."""
+        from .catalysts import add_usage, build, proposal_error, scout, source_table
+
+        note = progress or (lambda text: None)
+        claim = result.confirmed_claim.values
+        model, effort = self.settings.narrative_model, self.settings.narrative_effort
+        if client is None:
+            try:
+                client = self._client()
+            except Exception as exc:  # no SDK or no credentials
+                result.catalyst_proposal = proposal_error("not_configured", model, self.now(), f"Claude API is not configured: {type(exc).__name__}: {exc}")
+                return self._finish(result)
+        errors: list[ProviderErrorRecord] = []
+        today = self.today()
+        company = self._company(result.reported_facts, result.evidence_records, claim.ticker)
+        register = self.catalysts.get(claim.ticker) if self.catalysts is not None else None
+        note("filings")
+        sec = self._guard(SEC_PROVIDER_ID, mode, errors, lambda: self._fetcher(mode, "sec"))
+        filings = []
+        if sec is not None:
+            reader = FilingTextProvider(sec)
+            for record in recent_8ks(result.evidence_records, since=today - timedelta(days=365)):
+                got = self._guard(FilingTextProvider.provider_id, mode, errors, lambda r=record: reader.sentences(r, company))
+                if got and got[0]:
+                    filings.append((record, got[0], got[1]))
+        note("news")
+        market = self._guard(MARKET_PROVIDER_ID, mode, errors, lambda: self._fetcher(mode, "market"))
+        news_provider = NewsProvider(market) if market is not None else None
+        broad = list(result.news.items) if result.news is not None else []
+        if news_provider is not None:
+            got = self._guard(NewsProvider.provider_id, mode, errors, lambda: news_provider.google(google_query(company, days=365)))
+            broad += got[0] if got else []
+        first = source_table(filings, broad)
+        note("themes")
+        terms, res1 = scout(client, first, company=company, ticker=claim.ticker, register=register, model=model, effort=effort)
+        if res1.status != "ok":
+            result.catalyst_proposal = proposal_error(res1.status, res1.model, self.now(), res1.error or res1.status, usage=res1.usage, sources=first)
+            return self._finish(result)
+        for c in register.catalysts if register is not None else []:
+            for term in c.search_terms[:1]:
+                if term.lower() not in {t.lower() for t in terms}:
+                    terms.append(term)
+        targeted: list[list] = []
+        if news_provider is not None:
+            for term in terms[:8]:
+                note(f"search:{term}")
+                got = self._guard(NewsProvider.provider_id, mode, errors, lambda t=term: news_provider.google(google_query(company, t, days=730)))
+                if got:
+                    targeted.append(got[0])
+        sources = source_table(filings, broad, themes=targeted)
+        note("catalysts")
+        catalysts, res2 = build(client, sources, company=company, ticker=claim.ticker, register=register, model=model, effort=effort)
+        usage = add_usage(res1.usage, res2.usage)
+        if res2.status != "ok":
+            result.catalyst_proposal = proposal_error(res2.status, res2.model, self.now(), res2.error or res2.status, usage=usage, sources=sources, themes=terms)
+            return self._finish(result)
+        note("reactions")
+        fit = self._fit_for(result, mode)
+        if fit is not None:
+            fill_reactions(catalysts, lambda day: reaction(fit, day), today=today)
+        result.catalyst_proposal = CatalystProposal(status="ok", model=res2.model, created_at=self.now(), themes=terms, sources=sources,
+                                                    catalysts=catalysts, usage=usage,
+                                                    error="; ".join(f"{e.provider_id}: {e.code}" for e in errors) or None)
+        return self._finish(result)
+
+    def confirm_catalysts(self, result: CaseResult, accepted: list[str]) -> CaseResult:
+        """Write the accepted proposals into the stock's register; remember rejected names."""
+        from .catalysts import merge
+
+        proposal = result.catalyst_proposal
+        if proposal is None or proposal.status != "ok" or proposal.decided_at is not None:
+            return result
+        claim = result.confirmed_claim.values
+        current = self.catalysts.get(claim.ticker) if self.catalysts is not None else result.catalysts
+        register = merge(current, proposal, accepted, ticker=claim.ticker,
+                         company=self._company(result.reported_facts, result.evidence_records, claim.ticker), now=self.now())
+        if self.catalysts is not None:
+            self.catalysts.save(register)
+        result.catalysts = register
+        result.catalyst_proposal = proposal.model_copy(update={"decided_at": self.now(), "accepted": list(accepted)})
+        return self._finish(result)
+
+    def remove_catalyst(self, result: CaseResult, catalyst_id: str) -> CaseResult:
+        """Take a confirmed catalyst out of the register (it is not added to the rejected names)."""
+        claim = result.confirmed_claim.values
+        register = (self.catalysts.get(claim.ticker) if self.catalysts is not None else None) or result.catalysts
+        if register is None:
+            return result
+        register = register.model_copy(update={"catalysts": [c for c in register.catalysts if c.id != catalyst_id], "updated_at": self.now()})
+        if self.catalysts is not None:
+            self.catalysts.save(register)
+        result.catalysts = register
+        return self._finish(result)
 
     # ---------------------------------------------------------------- AI narrative
 
@@ -487,6 +655,13 @@ class CaseService:
                 snap.period_suggestion = ReferenceSuggestion(value=f"FY ending {latest.period_end}", source="SEC XBRL")
                 snap.suggestions["base_metric_currency"] = ReferenceSuggestion(value="USD", source="SEC XBRL unit")
             self._default_assumptions(snap, facts, market)
+        peers = self._guard(YahooPeersProvider.provider_id, mode, errors, lambda: YahooPeersProvider(self._fetcher(mode, "market")).similar(symbol))
+        if peers is not None:
+            listed = [p for p in peers[0] if p != symbol][:6]
+            if listed:
+                snap.assumption_suggestions["peer_tickers"] = ReferenceSuggestion(
+                    value=", ".join(listed), source=f"{DEFAULT_PREFIX}Yahoo Finance similar stocks for {symbol}")
+        snap.provider_errors = list(errors)
         snap.assumption_suggestions.setdefault("filings_since", ReferenceSuggestion(
             value=date(self.today().year - 2, 1, 1).isoformat(), source=f"{DEFAULT_PREFIX}two calendar years of filings"))
         return snap

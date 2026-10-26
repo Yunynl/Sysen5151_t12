@@ -12,9 +12,11 @@
 
 - **Reads the claim.** Fixed rules (no AI) pick out the ticker, target price and time frame, and whether the claim means touching the price before the deadline ("hit", "冲到") or closing above it on the date. Public data fills in the price, share count and financials. Every value shows where it came from, and the user confirms the exact inputs, which are tied to a SHA-256 fingerprint.
 - **Computes the probability in code.** M1 uses the option market's implied volatility (Black-Scholes N(d2), and the first-passage formula for touch claims), M2 the same formulas with historical volatility, M3 the share of similar-size US companies that grew as fast as the claim needs (SEC XBRL frames), and M4 this stock's own past windows of the same length. The headline is the range of the usable methods, and disagreements between them are explained.
-- **Shows the evidence.** Eight data sources (Yahoo option chains and prices, the 10-year Treasury yield, SEC filings and XBRL facts, peer base rates, Form 4 insider trades, Polymarket, CNN Fear & Greed), a K-line, a layered plain-language report, an event-scenario calculator and a fundamentals check (an evidence-as-of verdict with recheck conditions).
+- **Shows the evidence.** Ten data sources (Yahoo option chains and prices, the 10-year Treasury yield, SEC filings and XBRL facts, peer base rates, Form 4 insider trades, Polymarket, CNN Fear & Greed, the market structure: SPY, QQQ, IWM, VIX and a peer basket, and news: headlines, 8-K press releases and the earnings date), a K-line, a layered plain-language report, an event-scenario calculator and a fundamentals check (an evidence-as-of verdict with recheck conditions).
 - **Checks the AI.** The optional narrative (Claude) sees only a numbered fact table. A verifier checks every number in every sentence against the facts it cites, and a narrative already written for the same facts is reused. Measured cost: about $0.06 per narrative.
-- **Reproducible.** Live, record, replay and synthetic data modes, exact `Decimal` arithmetic, and 216 offline tests.
+- **Separates the market from the stock.** The last 20 trading days are split into the part that came with the market, the part that came with similar stocks and the stock's own part, day by day with the SEC filings of each day; when the same claim is run again, the page shows why the probability moved (price parts, volatility, time, rate).
+- **Tracks what the price is waiting for.** A catalyst register per stock (a product launch, a deal, an approval): Claude proposes catalysts and their dated history from 8-K press releases and headlines, code checks every citation, date and number, you confirm, and each event shows how the stock reacted. Dated catalysts feed the event scenario.
+- **Reproducible.** Live, record, replay and synthetic data modes, exact `Decimal` arithmetic, and 269 offline tests.
 
 Chinese and English interface. Research use only; not investment advice.
 
@@ -38,6 +40,33 @@ TickerCase is a stock-only take on [komako-workshop/digital-oracle](https://gith
 | M4 own history | share of past windows of the same length in which this stock rose enough | monthly closes; used in the range only when the history holds ≥ 4 non-overlapping windows |
 
 The range is [min, max] of the usable methods; the tier follows the middle estimate (<5% lottery, 5–20% unlikely, 20–50% possible, >50% likely). Where methods disagree, the page says which is higher and what each measures. Context layers: insider Form 4 transactions split by code (only P purchases and S sales are trades by choice; grants, exercises and tax withholding are not selling), Polymarket contracts on the ticker, CNN Fear & Greed, S&P 500 and Nasdaq-100 returns over the same length. The page shows each data step as it runs and which ones failed. A live RKLB run fetches all eleven steps in about 12 seconds.
+
+## Catalyst register (v0.12)
+
+The probability methods see the price; they do not see what the price is waiting for. For RKLB that is Neutron's first launch and the Iridium deal; for INTC, 18A and foundry customers. v0.12 keeps a register of these catalysts for each stock, with their dated history, and measures how the stock reacted each time the story changed. The headline range is unchanged.
+
+- **Sources (code).** Sentences from the company's 8-K press releases of the last year (the Exhibit 99 file, with the safe-harbor and "About" boilerplate cut, only sentences with dates, plans or milestones kept) and headlines from Google News (RSS search, `when:730d` so a recorded search replays) and Yahoo Finance. Every source has a date, an outlet and a link; articles themselves are not read.
+- **Proposal (Claude, two calls).** "SCAN" asks Claude for the main themes and their search words, runs a targeted two-year Google News search per theme (theme headlines come first, spread over time so the early history stays in), then asks Claude for the catalysts: name, kind, status, the latest stated timing (2027, 2027-H1, 2027-Q2, a month or a day), and the dated events, each citing source ids. Structured JSON output, the model and effort of the narrative setting, server-side fallbacks on.
+- **Checks (code).** Cited ids must exist, each event must be dated like one of its sources (±1 day), the year of the stated timing must appear in a cited source, and every number in the text (English and Chinese) must appear in a cited source. Problems are listed on the card, and such proposals start unticked.
+- **Reactions (code).** Each event gets the stock's move over the event day and the next (news after the close moves the next session), and the part the market and the peers do not explain, with the betas of the v0.11 split.
+- **Your decision.** Tick the proposals to keep and press CONFIRM. Accepted catalysts go into `data/catalysts/<TICKER>.json`; names you do not accept are remembered and not proposed again; a catalyst can be removed later. Every later RUN reads the register and measures reactions for new events; a later SCAN may propose updates (new events) to a confirmed catalyst.
+- **Dates and scenarios.** The CAT unit lists the known dates before the claim's deadline: the next earnings (Yahoo calendar, marked when Yahoo only estimates it) and confirmed catalysts with a stated timing (the middle of the span: 2027 → 2027-07-01). Each row shows the move the option market prices around the date, warns when the expiries around it are far apart, and "→ scenario" fills the date and that move into RPT · CH2.
+- **Elsewhere.** The flagged days of the MKT tape list the headlines published since the previous close; a new data channel (CH-10 NEWS); the AI narrative gets the earnings date, the confirmed catalysts, their latest events and reactions (prompt version 4). The CAT unit sits under MKT, so the later units move down one (FEED 06 with ten channels, RPT 07, SIG 08, NAR 09) and the jump keys gain CAT.
+
+A live RKLB scan on 2026-10-26 took about 60 seconds and two calls (about 42,000 input and 4,000 output tokens, about $0.24 at list price) over 305 sources. It proposed six catalysts, all passing the checks: Neutron's first launch (2025-11-10 slip to mid-2026; 2026-01-23 tank rupture in testing; 2026-05-07 still aiming for late 2026; 2026-08-10 the 2026 window narrowing; 2026-10-14 moved to 2027, a two-day own move of −8.9%), the Iridium acquisition (signed 2026-06-29, +10.8% own), the at-the-market share sale that funds it, the protest of NASA's Mars orbiter award, and two contracts. A following RUN read the register, found the next earnings on 2026-11-09, and listed the 2026-10-15 headlines ("Rocket Lab Announces Neutron Launch Delay", "...slips to 2027") next to that day's −10.6% own move.
+
+## Market structure and probability change (v0.11)
+
+A stock can fall 25% in two weeks for two different reasons: news about the company, or money leaving everything that trades like it. The four methods all start from today's price, so both kinds of fall go into the probability in full and the page could not say which happened. v0.11 measures the split and shows it; the headline range is unchanged and nothing assumes that a fall will reverse.
+
+- **The split (UNIT 04 · MKT).** Daily log returns of the stock are regressed on SPY and on a peer basket's move beyond its own market exposure, over the 120 trading days before the last 20. Over those last 20 days the move is then split into market (beta × SPY), peers (beta × the basket's extra move) and own (the rest); the three parts add up to the window's return. Each day is listed the same way, and a day whose own part exceeds twice the daily residual is marked with ◆ together with the SEC filings of that day and the day before (8-K item numbers are now read from SEC submissions and named: 7.01 Reg FD, 8.01 other events, 2.02 results...). A statistical split, not a cause: the peers have news of their own.
+- **The peer basket.** "READ" fills it with Yahoo Finance's similar stocks as a ◇ default (for RKLB: ASTS, NBIS, IONQ, IREN, CRWV); it can be edited in UNIT 02 (up to 8, comma-separated). The split keeps a peer only when its daily returns correlated at least 0.3 with the stock and lists the others with their correlation (for INTC, Yahoo's list includes PFE, which is left out). SEC's industry-code company lists were tested and left out: for SIC 3760 they return mostly inactive filers, without Rocket Lab itself.
+- **Market readings.** SPY, QQQ, IWM, VIX and 3-month VIX with their change over the window, and whether the VIX curve is inverted.
+- **A scenario line, not a forecast.** Under the headline: the range the same methods give if the market and peer parts of the window returned (the price divided by those two parts). M3 does not depend on the price; M4 is recounted from the monthly closes.
+- **Why the probability moved (Δ).** When an earlier run of the same claim exists (same ticker, target and condition, deadline within about three months, older prices), the unit shows the change of M1 and M2 split into market, peers, own, volatility, time and rate. The split is a Shapley value: it does not depend on the order of the steps, and the parts add up to the change. The status bar shows the earlier range.
+- **Page.** The new unit sits under the probability screen, so the later report units move down one (FEED 05 with nine channels, RPT 06, SIG 07, NAR 08) and the jump keys gain MKT. The raw-data channel lists the daily split with the betas and every URL the step read. The AI narrative gets the split, the marked days, the scenario (labelled as one) and the change as facts; its prompt version is now 3.
+
+A live RKLB run on 2026-10-26 ("RKLB三年内股价到达200", touch by 2029-10-23) takes about 22 seconds: range 16.5–16.9%, against 29.5–29.8% on 2026-10-06. Over the 20 trading days to 2026-10-23 RKLB fell 28.9%: market −4.6%, peers −27.2% (ASTS, IONQ, IREN; beta 0.79), own +2.9%. 2026-10-15 is the one marked day, −10.1% on its own, the day after the 8-K of 2026-10-14 (7.01, 8.01) that moved Neutron's first launch. M1 went from 29.8% to 16.5%: market −3.1, peers −9.0, own −0.3, volatility −0.7, rate −0.2 percentage points. If the market and peer parts returned, the price would be about 76.48 and the range 29–30%.
 
 ## Console page and K-line (v0.9)
 
@@ -86,7 +115,7 @@ It does **not** trade, manage portfolios or give investment advice. The probabil
 5. Deterministic evidence checks classified as supporting / contrary / missing / context, a verdict and recheck conditions. (OA.12–OA.14)
 6. Result with calculations, evidence and sources, verdict, recheck conditions, gaps, provider errors and the data mode of every part. (OA.15)
 
-Not implemented yet: AI extraction for sentences the rules cannot read (OA.2–OA.3 currently use rules) and AI-drafted analysis of filing text (OA.10–OA.11).
+Not implemented yet: AI extraction for sentences the rules cannot read (OA.2–OA.3 currently use rules). Filing text is read since v0.12, for the catalyst register only (8-K press releases); the evidence checks still use XBRL facts and filing metadata.
 
 ## Plain report
 
@@ -150,6 +179,7 @@ python -m tickercase.cli run examples/synthetic_claim_ps.json --sec-mode synthet
 | `filings_since` | optional | start of the filing window; enables the coverage check |
 | `probability_drift` | optional extra | yearly drift assumption, between -1 and 1; enables the probability section |
 | `probability_volatility` | optional extra | yearly volatility, > 0 and <= 3; defaults to historical volatility |
+| `peer_tickers` | optional | similar stocks for the market-structure split, comma-separated, at most 8; the claim's own ticker is dropped. READ fills Yahoo's similar stocks as a default |
 | `field_sources` | set by prefill | field -> public source, or `default_assumption:...` for a default; recorded as provenance while the value is unchanged |
 
 Which inputs matter most: the claim gives the ticker, target price and horizon. Reference price, current shares and base metric are facts the page fills from public data. The valuation multiple and the target share count are assumptions the claim usually leaves open, and they drive the result: the required revenue or net income scales with 1 / multiple and with the share count. The defaults are today's multiple ("no re-rating") and the reported share trend; the sensitivity table shows how the requirement moves when the multiple changes.
@@ -185,6 +215,13 @@ Acceptance example (synthetic): reference 50, target 100, 5 years, 100,000,000 t
 | Yahoo Finance options `query2.finance.yahoo.com/v7/finance/options` | option chains, implied volatility | free, no key | needs a session cookie and crumb (handled by `YahooAuthedClient`); unofficial |
 | SEC XBRL frames `data.sec.gov/api/xbrl/frames` | revenue / net income of all filers for a calendar year | free, no key | SEC User-Agent rule |
 | SEC Archives Form 4 XML | insider transactions | free, no key | SEC User-Agent rule; at most 40 filings per run |
+| Yahoo Finance chart, one year daily | SPY, QQQ, IWM, ^VIX, ^VIX3M and the peer basket for the market-structure split | free, no key | same unofficial endpoint as the prices |
+| Yahoo Finance `query2.finance.yahoo.com/v6/finance/recommendationsbysymbol` | similar stocks, the default peer basket | free, no key | built from what users view together, so it mixes industry peers and theme stocks |
+| Yahoo Finance `query1.finance.yahoo.com/v1/finance/search` | the 20 latest headlines on the ticker | free, no key | headlines only |
+| Google News RSS `news.google.com/rss/search` | headline searches on the company and each catalyst theme | free, no key | up to 100 items per search; headlines only; GDELT was tested and rate-limits anonymous use |
+| Yahoo Finance `quoteSummary?modules=calendarEvents` | the next earnings date | free, no key | needs the session crumb like the option chains; Yahoo marks estimated dates |
+| SEC Archives filing index and Exhibit 99 | 8-K press release sentences for the catalyst register | free, no key | SEC User-Agent rule; at most 10 filings of the last year per scan |
+| Anthropic API (optional) | the catalyst proposal (two calls) and the narrative (one call) | billed per token | only when the button is pressed; about $0.24 for one RKLB scan |
 | Polymarket `gamma-api.polymarket.com/public-search` | event contracts on the ticker | free, no key | usually weekly or monthly contracts |
 | CNN Fear & Greed `production.dataviz.cnn.io` | market sentiment | free, no key | needs browser headers |
 
