@@ -167,7 +167,7 @@ def warnings_of(result: CaseResult, zh: bool) -> list[str]:
     return out
 
 
-def status_bar(result: CaseResult, zh: bool, jumps: Iterable[tuple[str, str]]) -> str:
+def status_bar(result: CaseResult, zh: bool, jumps: Iterable[tuple[str, str]] = ()) -> str:
     v = result.confirmed_claim.values
     o = result.oracle
     touch = is_touch(result)
@@ -183,12 +183,15 @@ def status_bar(result: CaseResult, zh: bool, jumps: Iterable[tuple[str, str]]) -
     if o is not None:
         r, _ = other_side(result, zh)
         side = chip(f"{other_label(result, zh)} ≈ {r}") if r else ""
+    ch = result.change
+    if ch is not None and ch.previous_low is not None:
+        last = f"{pct(ch.previous_low, 0)}–{pct(ch.previous_high, 0)}"
+        side += chip(L(zh, f"上次 {ch.previous_market_date}：{last}", f"last run {ch.previous_market_date}: {last}"))
     n = len(warnings_of(result, zh))
-    warn = (f'<a href="#u-sig" class="tc-warnlink">{lamp("red")}{dymo(f"WARN {n}", small=True)}</a>' if n
-            else f'<span class="tc-warnlink">{lamp("off")}{dymo("WARN 0", small=True)}</span>')
+    warn = f'<span class="tc-warnlink">{lamp("red" if n else "off")}{dymo(f"WARN {n}", small=True)}</span>'
     links = "".join(f'<a class="tc-jump" href="#{esc(h)}">{esc(t)}</a>' for h, t in jumps)
-    return (f'<div class="tc-status"><b class="tc-serif">{esc(claim)}</b>{rng}{side}{warn}<span class="tc-grow"></span>'
-            f'<nav class="tc-jumps" aria-label="{esc(L(zh, "跳到单元", "Jump to unit"))}">{links}</nav></div>')
+    nav = f'<span class="tc-grow"></span><nav class="tc-jumps" aria-label="{esc(L(zh, "跳到单元", "Jump to unit"))}">{links}</nav>' if links else ""
+    return f'<div class="tc-status"><b class="tc-serif">{esc(claim)}</b>{rng}{side}{warn}{nav}</div>'
 
 
 # ------------------------------------------------------------------ result units
@@ -260,6 +263,13 @@ def mini_cassette(spin: bool = False) -> str:
 
 
 def prb_unit(result: CaseResult, zh: bool, label: str, anim: bool) -> str:
+    """The probability screen with the four method strips below it."""
+    return (unit_head(label, chip(L(zh, "平方根刻度 · 同一把尺子", "square-root scale · one ruler")), "u-prb")
+            + f'<div class="tc-prb"><div class="tc-prb-screen">{prb_screen(result, zh, anim)}</div>{method_strips(result, zh, anim)}</div>')
+
+
+def prb_screen(result: CaseResult, zh: bool, anim: bool) -> str:
+    """The headline range on one square-root ruler, with the methods marked on it."""
     o = result.oracle
     touch = o.condition == "touch"
     target = format(o.target_price, "f")
@@ -275,6 +285,9 @@ def prb_unit(result: CaseResult, zh: bool, label: str, anim: bool) -> str:
     _, side_detail = other_side(result, zh)
     if side_detail:
         lines.append(("tc-am", f"{other_label(result, zh)}{L(zh, '：', ': ')}{side_detail}"))
+    shift = shifted_line(result, zh)
+    if shift:
+        lines.append(("tc-dim", shift))
     lines_html = "".join(f'<div class="{c} tc-line">{esc(t)}</div>' for c, t in lines)
     if o.low is not None:
         big = (f'<span class="tc-vt tc-huge">{pct(o.low, 0)}–{pct(o.high, 0)}</span>'
@@ -297,13 +310,21 @@ def prb_unit(result: CaseResult, zh: bool, label: str, anim: bool) -> str:
     zones = L(zh, ("彩票级 &lt;5%", "不太可能 5–20%", "有可能 20–50%", "较可能 &gt;50%"), ("Lottery &lt;5%", "Unlikely 5–20%", "Possible 20–50%", "Likely &gt;50%"))
     zone_html = "".join(f'<span{" class=tc-am" if i == 3 else ""}>{z}</span>' for i, z in enumerate(zones))
     n_ok = len([m for m in o.methods if m.status == "ok"])
-    screen = (f'<div class="tc-bezel"><div class="tc-crt{" tc-boot" if anim else ""}"><span class="tc-noise"></span><div class="tc-crt-in tc-ph" style="gap:12px">'
-              f'<span class="tc-dim tc-small">PRB&gt; {esc(head)} · {esc(L(zh, f"{n_ok} 种方法交叉核对", f"{n_ok} methods cross-checked"))}</span>'
-              f'<div class="tc-bigrow">{big}</div>'
-              f'<div class="tc-marks">{"".join(top)}</div><div class="tc-cells" aria-hidden="true">{cells}</div><div class="tc-marks">{"".join(bottom)}{ticks}</div>'
-              f'<div class="tc-zones tc-dim">{zone_html}</div>'
-              f'<span class="tc-dim tc-small">{esc(L(zh, "平方根刻度 · 亮格为区间 · ▼▲ 计入 · ▽△ 仅参考", "square-root scale · lit cells = range · ▼▲ counted · ▽△ context"))}</span>'
-              f'</div></div></div>')
+    return (f'<div class="tc-bezel"><div class="tc-crt{" tc-boot" if anim else ""}"><span class="tc-noise"></span><div class="tc-crt-in tc-ph" style="gap:12px">'
+            f'<span class="tc-dim tc-small">PRB&gt; {esc(head)} · {esc(L(zh, f"{n_ok} 种方法交叉核对", f"{n_ok} methods cross-checked"))}</span>'
+            f'<div class="tc-bigrow">{big}</div>'
+            f'<div class="tc-marks">{"".join(top)}</div><div class="tc-cells" aria-hidden="true">{cells}</div><div class="tc-marks">{"".join(bottom)}{ticks}</div>'
+            f'<div class="tc-zones tc-dim">{zone_html}</div>'
+            f'<span class="tc-dim tc-small">{esc(L(zh, "平方根刻度 · 亮格为区间 · ▼▲ 计入 · ▽△ 仅参考", "square-root scale · lit cells = range · ▼▲ counted · ▽△ context"))}</span>'
+            f'</div></div></div>')
+
+
+def method_strips(result: CaseResult, zh: bool, anim: bool, *, solo: bool = False) -> str:
+    """One cassette strip per method: both conditions, its place on the ruler, what it measures. ``solo``: no screen above, so no feed pipes."""
+    o = result.oracle
+    touch = o.condition == "touch"
+    used, _ = split_methods(result)
+    used_ids = {m.id for m, _ in used}
     strips = []
     for m in o.methods:
         p = m.touch_probability if touch else m.probability
@@ -321,8 +342,240 @@ def prb_unit(result: CaseResult, zh: bool, label: str, anim: bool) -> str:
             f'<div class="tc-grid2">{readout(L(zh, "A · 触及", "A · touch"), a, amber=touch)}{readout(L(zh, "B · 收在", "B · close"), b, amber=not touch)}</div>'
             f'<div class="tc-rd" aria-hidden="true" style="padding:5px 6px"><div class="tc-mcells">{mcells}</div></div>'
             f'<span class="tc-basis">{esc(tr(m.measures, zh))}</span></div>')
-    return (unit_head(label, chip(L(zh, "平方根刻度 · 同一把尺子", "square-root scale · one ruler")), "u-prb")
-            + f'<div class="tc-prb"><div class="tc-prb-screen">{screen}</div><div class="tc-prb-methods">{"".join(strips)}</div></div>')
+    return f'<div class="tc-prb-methods{" tc-solo" if solo else ""}">{"".join(strips)}</div>'
+
+
+def signed(x: Optional[float], digits: int = 1) -> str:
+    return "—" if x is None else f"{x * 100:+.{digits}f}%"
+
+
+def shifted_line(result: CaseResult, zh: bool) -> str:
+    """The scenario under the headline: the range if the market and peer parts of the recent move returned."""
+    st = result.structure
+    sh = st.shifted if st is not None else None
+    if sh is None or sh.low is None:
+        return ""
+    rng = pct(sh.low, 0) if round(sh.low * 100) == round(sh.high * 100) else f"{sh.low * 100:.0f}–{sh.high * 100:.0f}%"
+    mk, pp = signed(st.market_part), signed(st.peer_part)
+    return L(zh, f"情景（不是预测）· 若近 {st.window_days} 日的大盘（{mk}）与同类（{pp}）两部分回到原位（价 ≈ {sh.spot_to:,.2f}）：{rng}",
+             f"Scenario, not a forecast · if the market ({mk}) and peer ({pp}) parts of the last {st.window_days} days returned (price ≈ {sh.spot_to:,.2f}): {rng}")
+
+
+ITEM_NAMES = {"1.01": ("重大协议", "material agreement"), "1.02": ("终止协议", "agreement ended"), "2.01": ("完成收购或出售", "acquisition or sale completed"),
+              "2.02": ("业绩", "results"), "2.03": ("新增债务", "new debt"), "2.05": ("重组", "restructuring"), "2.06": ("资产减值", "impairment"),
+              "3.02": ("发行股份", "share issue"), "5.02": ("高管变动", "officer change"), "5.07": ("股东投票", "shareholder vote"),
+              "7.01": ("Reg FD 披露", "Reg FD disclosure"), "8.01": ("其他事项", "other events")}
+
+
+def filing_text(label: str, zh: bool) -> str:
+    """'8-K 2026-10-14 (7.01, 8.01)' -> '8-K 2026-10-14 (7.01 Reg FD 披露, 8.01 其他事项)'."""
+    head, _, items = label.partition(" (")
+    if not items:
+        return label
+    codes = [x.strip() for x in items.rstrip(")").split(",")]
+    return f"{head} ({', '.join(f'{c} {L(zh, *ITEM_NAMES[c])}' if c in ITEM_NAMES else c for c in codes)})"
+
+
+def dbar(x: float, scale: float) -> str:
+    """Diverging bar around a centre line: falls solid, rises hollow (as on the K-line), never red."""
+    w = 0.0 if scale <= 0 else min(50.0, 50.0 * abs(x) / scale)
+    side = f"right:50%;width:{w:.1f}%" if x < 0 else f"left:50%;width:{w:.1f}%"
+    return f'<span class="tc-dbar" aria-hidden="true"><i class="{"neg" if x < 0 else "pos"}" style="{side}"></i></span>'
+
+
+PART_NAMES = {"market": ("大盘", "market"), "peers": ("同类", "peers"), "own": ("个股", "own"), "price": ("股价", "price"),
+              "volatility": ("波动率", "volatility"), "time": ("时间", "time"), "rate": ("利率", "rate")}
+
+
+def _tape(st, zh: bool) -> str:
+    scale = max([abs(d.own) for d in st.days] + [1e-9])
+    rows = [f'<div class="tc-trow tc-dim tc-thead"><span>{esc(L(zh, "日期", "day"))}</span><span class="tc-num">{esc(L(zh, "本股", "stock"))}</span>'
+            f'<span class="tc-num">{esc(L(zh, "大盘+同类", "mkt+peers"))}</span><span class="tc-num">{esc(L(zh, "个股", "own"))}</span><span></span>'
+            f'<span>{esc(L(zh, "SEC 申报", "SEC filings"))}</span></div>']
+    for i, d in enumerate(st.days):
+        files = [filing_text(f, zh) for f in d.filings]
+        if d.flagged and i > 0:
+            files += [L(zh, f"前一交易日：{filing_text(f, zh)}", f"day before: {filing_text(f, zh)}") for f in st.days[i - 1].filings]
+        files += [f"▸ {h}" for h in d.headlines]
+        rows.append(f'<div class="tc-trow{" tc-am" if d.flagged else ""}"><span>{"◆" if d.flagged else "·"} {d.day:%m-%d}</span>'
+                    f'<span class="tc-vt">{esc(signed(d.stock))}</span><span class="tc-vt">{esc(signed(math.expm1(d.market + d.peers)))}</span>'
+                    f'<span class="tc-vt">{esc(signed(math.expm1(d.own)))}</span>{dbar(d.own, scale)}<span class="tc-tfile">{esc(" · ".join(files))}</span></div>')
+    return f'<div class="tc-tape2">{"".join(rows)}</div>'
+
+
+def _side(st, zh: bool) -> str:
+    peers = []
+    for x in st.peers:
+        rho = f"ρ {x.correlation:.2f}" if x.correlation is not None else ""
+        ret = signed(x.window_return) if x.window_return is not None else ""
+        tag = L(zh, "采用", "used") if x.used else L(zh, "未采用", "left out")
+        peers.append(f'<div class="tc-prow3{"" if x.used else " tc-off"}"><b>{esc(x.symbol)}</b><span>{esc(rho)}</span><span>{esc(ret)}</span>'
+                     f'<span class="tc-tag">{esc(tag)}</span></div>' + (f'<span class="tc-src">{esc(tr(x.note, zh))}</span>' if x.note and not x.used else ""))
+    if not peers:
+        peers.append(f'<span class="tc-src">{esc(L(zh, "没有同类篮子：在 STEP 2 核对页的「高级参数 · 同类篮子」里填写。", "No peer basket: enter one under “More inputs · Peer basket” in STEP 2."))}</span>')
+    src = (st.peer_source or "").removeprefix("default_assumption:")
+    rule = L(zh, "与本股日相关系数 ≥ 0.3 才采用", "used when the daily correlation is at least 0.3")
+    peers.append(f'<span class="tc-src">{esc(L(zh, f"来源：{src}；", f"source: {src}; ") + rule if src else rule)}</span>')
+    regime = []
+    for x in st.regime:
+        vix = x.symbol.startswith("^")
+        chg = "" if x.change is None else (f"{x.change:+.2f}" if vix else signed(x.change))
+        regime.append(f'<div class="tc-prow3"><b>{esc(x.symbol.lstrip("^"))}</b><span>{x.last:,.2f}</span><span>{esc(chg)}</span></div>')
+    lv = {x.symbol: x.last for x in st.regime}
+    if lv.get("^VIX") and lv.get("^VIX3M"):
+        ratio = lv["^VIX"] / lv["^VIX3M"]
+        word = L(zh, "短期恐慌高于远期（倒挂）", "near-term fear above the 3-month (inverted)") if ratio > 1 else L(zh, "正常（短期低于远期）", "normal (near term below 3-month)")
+        regime.append(f'<span class="tc-src">VIX ÷ VIX3M = {ratio:.2f}{esc(L(zh, "：", ": "))}{esc(word)}</span>')
+    regime.append(f'<span class="tc-src">{esc(L(zh, f"窗口内变化 · VIX 按点数 · 截至 {st.window_end}", f"change over the window · VIX in points · to {st.window_end}"))}</span>')
+    return (f'<div class="tc-feedm">{dymo(L(zh, "PEER · 同类篮子", "PEER · basket"), small=True)}{"".join(peers)}</div>'
+            f'<div class="tc-feedm">{dymo(L(zh, "REGIME · 大环境", "REGIME · market"), small=True)}{"".join(regime)}</div>')
+
+
+def mkt_unit(result: CaseResult, zh: bool, label: str, anim: bool, *, notes: bool = True) -> str:
+    st, ch = result.structure, result.change
+    head = unit_head(label, chip(L(zh, "统计拆分，不是原因 · 贝塔取自前 120 个交易日", "a statistical split, not a cause · betas from the 120 trading days before")), "u-mkt")
+    delta = delta_block(result, zh, notes=notes) if ch is not None else ""
+    if st is None:
+        why = (L(zh, "市场结构这一步本次失败，见 SIG 的警示。", "The market-structure step failed in this run; see the warnings under SIG.")
+               if result.data_steps.get("market_structure") == "failed" else L(zh, "这份报告没有市场结构数据（v0.11 之前生成）。", "This report has no market-structure data (made before v0.11)."))
+        return head + para(why, "tc-mknote") + delta
+    parts = [("market", st.market_part, f"SPY β {st.beta_market:.2f}"),
+             ("peers", st.peer_part, f"β {st.beta_peers:.2f}" if st.beta_peers is not None else L(zh, "未分出", "not separated")),
+             ("own", st.own_part, f"R² {st.r_squared:.2f}")]
+    scale = max(abs(x) for _, x, _ in parts) or 1.0
+    rows = "".join(f'<div class="tc-split"><span>{esc(L(zh, *PART_NAMES[k]))}</span><span class="tc-vt tc-sv">{esc(signed(x))}</span>{dbar(x, scale)}'
+                   f'<span class="tc-dim tc-small">{esc(b)}</span></div>' for k, x, b in parts)
+    n_flag = sum(1 for d in st.days if d.flagged)
+    flag_note = L(zh, f"◆ 个股部分超过估计窗日残差的 2 倍（2 × {st.residual_sd * 100:.1f}%）：{n_flag} 天",
+                  f"◆ own part beyond twice the daily residual (2 × {st.residual_sd * 100:.1f}%): {n_flag} days")
+    window = L(zh, f"近 {st.window_days} 个交易日", f"last {st.window_days} trading days")
+    screen = (f'<div class="tc-bezel"><div class="tc-crt{" tc-boot" if anim else ""}"><span class="tc-noise"></span><div class="tc-crt-in tc-ph" style="gap:12px">'
+              f'<span class="tc-dim tc-small">MKT&gt; {esc(st.symbol)} · {esc(window)} {st.window_start} → {st.window_end}</span>'
+              f'<div class="tc-bigrow"><span class="tc-vt tc-mktbig">{esc(signed(st.total))}</span>'
+              f'<span class="tc-line">{esc(L(zh, "= 大盘 + 同类 + 个股", "= market + peers + own"))}</span></div>'
+              f'<div class="tc-splits">{rows}</div><span class="tc-dim tc-small">{esc(flag_note)}</span>{_tape(st, zh)}</div></div></div>')
+    note_html = "".join(para(tr(n, zh), "tc-mknote") for n in st.notes) if notes else ""
+    return head + f'<div class="tc-mkt"><div class="tc-mkt-screen">{screen}</div><div class="tc-mkt-side">{_side(st, zh)}</div></div>' + note_html + delta
+
+
+DELTA_HOW = ("每一行是它对概率变化的贡献（个百分点），按 Shapley 方法分摊，与计算顺序无关，各行相加等于总变化。股价部分用同一组贝塔拆成大盘、同类和个股。",
+             "Each line is its contribution to the change in percentage points, split by the Shapley method (independent of order); the lines add up to the change. "
+             "The price part is split into market, peers and own with the same betas.")
+
+
+def delta_block(result: CaseResult, zh: bool, *, notes: bool = True) -> str:
+    """Why the probability moved since the last run of the same claim: one strip per model method."""
+    ch = result.change
+
+    def rng(lo, hi) -> str:
+        return "—" if lo is None else f"{lo * 100:.0f}–{hi * 100:.0f}%"
+
+    case = ch.previous_case_id[:8].upper()
+    title = L(zh, f"Δ · 与上次同一观点相比（{ch.previous_market_date} 的行情 · CASE {case}）", f"Δ · since the last run of this claim (prices of {ch.previous_market_date} · CASE {case})")
+    summary = L(zh, f"区间 {rng(ch.previous_low, ch.previous_high)} → {rng(ch.low, ch.high)} · 股价 {ch.spot_before:,.2f} → {ch.spot_after:,.2f}",
+                f"range {rng(ch.previous_low, ch.previous_high)} → {rng(ch.low, ch.high)} · price {ch.spot_before:,.2f} → {ch.spot_after:,.2f}")
+    names = {"M1": L(zh, "期权隐含", "option-implied"), "M2": L(zh, "历史波动率模型", "historical-volatility model")}
+    strips = []
+    for mc in ch.methods:
+        scale = max([abs(p.delta) for p in mc.parts] + [1e-9])
+        rows = "".join(f'<div class="tc-split"><span>{esc(L(zh, *PART_NAMES[p.key]))}</span><span class="tc-vt tc-sv">{p.delta * 100:+.1f}</span>{dbar(p.delta, scale)}'
+                       f'<span class="tc-dim tc-small">{esc(tr(p.detail, zh))}</span></div>' for p in mc.parts)
+        moved = f"({(mc.after - mc.before) * 100:+.1f} {L(zh, '个百分点', 'pp')})"
+        strips.append(f'<div class="tc-rd tc-ph tc-dstrip"><span class="tc-dim tc-small">{esc(mc.method)} {esc(names.get(mc.method, ""))}</span>'
+                      f'<span class="tc-line">{mc.before * 100:.1f}% → {mc.after * 100:.1f}% <span class="tc-am">{esc(moved)}</span></span>'
+                      f'<div class="tc-splits">{rows}</div></div>')
+    extra = ((para(tr(ch.note, zh), "tc-mknote") if ch.note else "") + para(L(zh, *DELTA_HOW), "tc-mknote")) if notes else ""
+    return (f'<div class="tc-delta">{sub_head(title)}<span class="tc-serif tc-dsum">{esc(summary)}</span><div class="tc-dgrid">{"".join(strips)}</div>'
+            + extra + "</div>")
+
+
+
+KIND_NAMES = {"product": ("产品与项目", "product"), "regulatory": ("审批监管", "regulatory"), "contract": ("合同", "contract"),
+              "financing": ("融资", "financing"), "deal": ("并购", "deal"), "operations": ("经营", "operations"), "legal": ("法律", "legal"),
+              "other": ("其他", "other")}
+STATUS_NAMES = {"upcoming": ("待发生", "upcoming"), "in_progress": ("进行中", "in progress"), "achieved": ("已实现", "achieved"),
+                "delayed": ("推迟", "delayed"), "cancelled": ("取消", "cancelled")}
+DIRECTION_NAMES = {"up": ("成功利好", "success lifts"), "down": ("成功利空", "success weighs"), "mixed": ("方向不定", "mixed")}
+
+
+def reaction_text(r, zh: bool) -> str:
+    if r is None:
+        return L(zh, "反应：待观察", "reaction: not yet")
+    own = "" if r.own is None else L(zh, f"，其中个股 {signed(r.own)}", f", own {signed(r.own)}")
+    return L(zh, f"{r.days} 日反应：本股 {signed(r.stock)}{own}", f"{r.days}-day reaction: stock {signed(r.stock)}{own}")
+
+
+def _source_links(sources, zh: bool, limit: int = 3) -> str:
+    out = []
+    for s in sources[:limit]:
+        label = f"{s.publisher or s.id} {s.day:%m-%d}"
+        out.append(f'<a class="tc-srclink" href="{esc(s.url)}" target="_blank" rel="noopener">{esc(label)}</a>' if s.url else f"<span>{esc(label)}</span>")
+    more = len(sources) - limit
+    return " · ".join(out) + (f" · +{more}" if more > 0 else "")
+
+
+def catalyst_card(c, zh: bool, *, proposed: bool = False) -> str:
+    """One catalyst: name, kind, status, timing, summary, then its dated events with sources and the measured reaction."""
+    name = c.name_zh if zh and c.name_zh else c.name_en
+    tag = c.updates if proposed and c.updates else c.id
+    head = (f'<div class="tc-row tc-between" style="gap:10px;flex-wrap:wrap"><b class="tc-serif tc-catname">{esc(name)}</b>'
+            f'<span class="tc-row" style="gap:6px;flex-wrap:wrap">{dymo(tag, small=True)}{dymo(L(zh, *KIND_NAMES[c.kind]), small=True)}'
+            f'{dymo(L(zh, *STATUS_NAMES[c.status]), small=True)}</span></div>')
+    timing = L(zh, f"预计 {c.expected}", f"expected {c.expected}") if c.expected else L(zh, "来源没有给出时间", "no timing in the sources")
+    meta = f'<div class="tc-catmeta">{esc(timing)} · {esc(L(zh, *DIRECTION_NAMES[c.direction]))}' + (
+        esc(L(zh, f" · 更新 {c.updates}", f" · updates {c.updates}")) if proposed and c.updates else "") + "</div>"
+    summary = c.summary_zh if zh and c.summary_zh else c.summary_en
+    events = "".join(
+        f'<div class="tc-catev"><span class="tc-catday">{e.day}</span><div class="tc-col" style="gap:2px;min-width:0">'
+        f'<span>{esc(e.change_zh if zh and e.change_zh else e.change_en)}</span>'
+        f'<span class="tc-catsub">{esc(reaction_text(e.reaction, zh))} · {_source_links(e.sources, zh)}</span></div></div>' for e in c.events)
+    problems = "".join(f'<div class="tc-catwarn">⚠ {esc(x)}</div>' for x in c.problems)
+    ok = "" if c.problems else f'<div class="tc-catok">{esc(L(zh, "核对通过：引用、日期和数字都能在来源里找到", "checks pass: citations, dates and numbers are in the sources"))}</div>'
+    return (f'<div class="tc-cat{" tc-catprop" if proposed else ""}">{head}{meta}<p class="tc-catsum">{esc(summary)}</p>'
+            f'<div class="tc-catevs">{events}</div>{problems if proposed or c.problems else ""}{ok if proposed else ""}</div>')
+
+
+def upcoming_rows(result: CaseResult, zh: bool) -> list[tuple[str, dict]]:
+    """Dated items before the deadline: the next earnings and confirmed catalysts, with the move options price around the day."""
+    from ..catalysts import upcoming
+    from ..oracle import event_move
+
+    today = result.created_at.date()
+    until = deadline_of(result)
+    term = result.options.term if result.options is not None else []
+    items = []
+    if result.earnings is not None and today < result.earnings.day <= until:
+        e = result.earnings
+        items.append((e.day, L(zh, "财报", "Earnings") + (L(zh, "（日期为估计）", " (estimated date)") if e.estimate else ""), "YAHOO CALENDAR", e.day))
+    for c in upcoming(result.catalysts, today=today, until=until):
+        items.append((c.expected_day, c.name_zh if zh and c.name_zh else c.name_en, L(zh, f"{c.id} · 预计 {c.expected}（取区间中点）", f"{c.id} · expected {c.expected} (middle of the span)"), c.expected_day))
+    rows = []
+    for day, name, src, ev_day in sorted(items, key=lambda x: x[0]):
+        mv = event_move(term, ev_day, today) if term else None
+        if mv is None:
+            priced = L(zh, "无期权期限结构", "no option term structure")
+        elif mv.status == "ok":
+            priced = L(zh, f"期权为前后额外定价 ±{mv.move * 100:.0f}%", f"options price an extra ±{mv.move * 100:.0f}% around it")
+            if mv.gap_days and mv.gap_days > 120:
+                priced += L(zh, f"（前后到期日相隔 {mv.gap_days} 天，期间其他消息也算在里面）", f" (the expiries around it are {mv.gap_days} days apart, so other news is mixed in)")
+        elif mv.status == "not_priced":
+            priced = L(zh, "期权没有为这个日期额外加价", "options add nothing around this date")
+        else:
+            priced = L(zh, "超出期权到期日，读不出定价", "beyond the listed expiries")
+        html = (f'<div class="tc-uprow"><span class="tc-vt tc-upday">{day}</span><div class="tc-col" style="gap:2px;min-width:0">'
+                f'<b class="tc-serif">{esc(name)}</b><span class="tc-catsub">{esc(src)} · {esc(priced)}</span></div></div>')
+        rows.append((html, {"name": name, "day": ev_day, "move": mv.move if mv is not None and mv.status == "ok" else None}))
+    return rows
+
+
+def headlines_html(feed, zh: bool, limit: int = 12) -> str:
+    if feed is None or not feed.items:
+        return para(L(zh, "本次没有取得新闻标题。", "No headlines in this run."), "tc-mknote")
+    rows = "".join(f'<div class="tc-headrow"><span class="tc-catday">{(n.published.date()):%m-%d}</span>'
+                   f'<a class="tc-srclink" href="{esc(n.url)}" target="_blank" rel="noopener">{esc(n.title)}</a><span class="tc-catsub">{esc(n.publisher)}</span></div>'
+                   for n in feed.items[:limit])
+    return f'<div class="tc-heads">{rows}</div>'
+
 
 
 def kline_notes(result: CaseResult, zh: bool) -> tuple[str, str]:
@@ -342,6 +595,9 @@ def kline_notes(result: CaseResult, zh: bool) -> tuple[str, str]:
 def feeds_unit(result: CaseResult, zh: bool, label: str, anim: bool) -> str:
     o, mk, op = result.oracle, result.market, result.options
     facts, br, ins, pm, se = result.reported_facts, result.base_rate, result.insiders, result.prediction_markets, result.sentiment
+    st = result.structure
+    n_used = len([x for x in st.peers if x.used]) if st else 0
+    nw, er = result.news, result.earnings
     tgt = format(o.target_price, "f") if o is not None else ""
     latest = None
     if facts is not None:
@@ -355,7 +611,7 @@ def feeds_unit(result: CaseResult, zh: bool, label: str, anim: bool) -> str:
         ("CH-02 PRC", "price_history", L(zh, "价格历史", "Price history"), f"{float(mk.last_close):,.2f}" if mk else "—",
          (L(zh, f"{mk.last_date} 收盘 · 年化波动 {float(mk.annualized_volatility) * 100:.0f}%", f"close {mk.last_date} · vol {float(mk.annualized_volatility) * 100:.0f}%/yr")
           if mk and mk.annualized_volatility is not None else ""),
-         L(zh, "YAHOO · 日线 · K 线见 UNIT 02", "YAHOO · daily · K-line in UNIT 02"), "M1 · M2 · M4 · FND"),
+         L(zh, "YAHOO · 日线 · K 线见 ① 答案", "YAHOO · daily · K-line on ① Answer"), "M1 · M2 · M4 · FND"),
         ("CH-03 TNX", "risk_free_rate", L(zh, "10 年期美债", "10-year Treasury"),
          pct(float(o.risk_free_rate), 2) if o is not None and o.risk_free_rate is not None else "—", L(zh, "无风险利率", "risk-free rate"), "YAHOO · ^TNX", "M1 · M2"),
         ("CH-04 FIN", "sec_facts", L(zh, "财报事实", "Reported facts"), amount(latest.value, zh) if latest else "—",
@@ -372,6 +628,14 @@ def feeds_unit(result: CaseResult, zh: bool, label: str, anim: bool) -> str:
         ("CH-08 SENT", "fear_greed", L(zh, "市场情绪", "Market mood"), f"{se.score:.1f}" if se else "—",
          (L(zh, f"恐惧贪婪 · 一月前 {se.previous_month:.1f}", f"Fear & Greed · a month ago {se.previous_month:.1f}") if se and se.previous_month is not None else ""),
          "CNN FEAR & GREED", "SIG"),
+        ("CH-09 MKT", "market_structure", L(zh, "市场结构", "Market structure"), signed(st.total) if st else "—",
+         (L(zh, f"近 {st.window_days} 日 · 大盘 {signed(st.market_part)} · 同类 {signed(st.peer_part)} · 个股 {signed(st.own_part)}",
+            f"last {st.window_days} days · market {signed(st.market_part)} · peers {signed(st.peer_part)} · own {signed(st.own_part)}") if st else ""),
+         "YAHOO · SPY QQQ IWM VIX" + (L(zh, f" · 同类 {n_used} 只", f" · {n_used} peers") if st else ""), "MKT · Δ"),
+        ("CH-10 NEWS", "news", L(zh, "新闻与日历", "News and calendar"), str(len(nw.items)) if nw else "—",
+         (L(zh, f"条标题 · 下次财报 {er.day}{'（估计）' if er.estimate else ''}", f"headlines · next earnings {er.day}{' (est.)' if er.estimate else ''}") if nw and er
+          else L(zh, "条标题", "headlines") if nw else ""),
+         "YAHOO · GOOGLE NEWS · YAHOO CALENDAR", "CAT · MKT"),
     ]
     cards = []
     for i, (ch, step, name, value, sub, src, to) in enumerate(rows):
@@ -388,22 +652,24 @@ def feeds_unit(result: CaseResult, zh: bool, label: str, anim: bool) -> str:
             + f'<div class="tc-feeds">{"".join(cards)}</div>')
 
 
-def sig_unit(result: CaseResult, zh: bool, label: str, notes: Iterable[str] = ()) -> str:
+def sig_unit(result: CaseResult, zh: bool, label: str, notes: Iterable[str] = (), *, signals: bool = True, warnings: bool = True) -> str:
+    """Agreeing (++) and diverging (!!) signals, then system warnings (data failures, coverage gaps) and notes."""
     rows = []
     rep = result.report
-    if rep is not None:
+    if rep is not None and signals:
         rows += [("green", "++", tr(x, zh)) for x in rep.agreements]
         rows += [("amber", "!!", tr(x, zh)) for x in rep.divergences]
-    warns = warnings_of(result, zh)
-    rows += [("red", "WARN", w) for w in warns]
-    if not warns:
-        rows.append(("off", "WARN 0", L(zh, "没有系统警示：数据源全部成功，申报覆盖完整。", "No system warnings: every data source answered and filing coverage is complete.")))
-    rows += [("off", "NOTE", n) for n in notes]
+    if warnings:
+        warns = warnings_of(result, zh)
+        rows += [("red", "WARN", w) for w in warns]
+        if not warns:
+            rows.append(("off", "WARN 0", L(zh, "没有系统警示：数据源全部成功，申报覆盖完整。", "No system warnings: every data source answered and filing coverage is complete.")))
+        rows += [("off", "NOTE", n) for n in notes]
     body = "".join(f'<div class="tc-sigrow">{lamp(k)}<span><b>{esc(t)}</b>　{esc(x)}</span></div>' for k, t, x in rows)
     return unit_head(label, "", "u-sig") + body
 
 
-def fnd_unit(result: CaseResult, zh: bool, label: str, more: str) -> str:
+def fnd_unit(result: CaseResult, zh: bool, label: str, more: str = "") -> str:
     v = result.verdict
     head = f'<div class="tc-uhead"><span class="tc-engr tc-tiny" style="letter-spacing:.18em">{esc(label)}</span></div>'
     if v is None:
@@ -414,7 +680,7 @@ def fnd_unit(result: CaseResult, zh: bool, label: str, more: str) -> str:
     return (head + f'<div class="tc-row" style="gap:12px;margin-bottom:6px">{lamp(tone)}<span class="tc-engr tc-serif tc-fndname">{esc(name)}</span></div>'
             f'<div class="tc-engr tc-tiny">{esc(v.rules_version.upper())} · {esc(L(zh, "截至", "as of"))} {v.as_of}</div>'
             f'<p class="tc-engr tc-serif tc-fndtext">{esc(meaning or L(zh, "证据视图，不是预测。", "An evidence view, not a forecast."))}</p>'
-            f'<a class="tc-jump" href="#u-rpt">{esc(more)}</a>')
+            + (f'<a class="tc-jump" href="#u-rpt">{esc(more)}</a>' if more else ""))
 
 
 NARR_ORDER = ("logic_chain", "resonance", "divergences", "conclusion", "upside", "downside")
@@ -512,6 +778,12 @@ FEEDS_INFO = [
     ("CH-06 INS", ("内部人交易", "Insider trades"), "SEC · FORM 4", ("过去 12 个月公开市场的买入与卖出", "open-market buying and selling over 12 months"), ("每日", "daily"), "SIG"),
     ("CH-07 PMKT", ("预测市场", "Prediction market"), "POLYMARKET", ("相关短期价格合约的概率，仅作参考", "related short-term price contracts, context only"), ("实时", "live"), "SIG"),
     ("CH-08 SENT", ("市场情绪", "Market mood"), "CNN · FEAR & GREED", ("整体市场环境，不进入概率计算", "market environment, not used in the probability"), ("每日", "daily"), "SIG"),
+    ("CH-09 MKT", ("市场结构", "Market structure"), "YAHOO · SPY QQQ IWM VIX",
+     ("把近 20 日涨跌拆成大盘、同类和个股三部分；同一观点再算时，解释概率为什么变", "splits the last 20 days into market, peers and own; explains why the probability moved since the last run"),
+     ("每日", "daily"), "MKT · Δ"),
+    ("CH-10 NEWS", ("新闻与日历", "News and calendar"), "YAHOO · GOOGLE NEWS · SEC 8-K",
+     ("新闻标题、8-K 新闻稿和财报日期：催化剂档案的来源，异动日旁的标题", "headlines, 8-K press releases and the earnings date: the sources of the catalyst register"),
+     ("每日", "daily"), "CAT · MKT"),
 ]
 
 METHODS_INFO = [
@@ -573,7 +845,7 @@ def boot_rows(zh: bool, *, version: str, mode: str, mode_label: str, sec_set: bo
     ready = mode not in ("live", "record") or sec_set
     return [
         (L(zh, f"TC-8 自检 · TICKERCASE v{version}", f"TC-8 SELF-TEST · TICKERCASE v{version}"), L(zh, "开始", "START"), "am"),
-        (L(zh, "数据源 08 路 · SEC YAHOO PMKT CNN", "DATA 08 CH · SEC YAHOO PMKT CNN"), L(zh, "就绪", "READY") if ready else L(zh, "受限", "LIMITED"), "am"),
+        (L(zh, "数据源 10 路 · SEC YAHOO PMKT CNN NEWS", "DATA 10 CH · SEC YAHOO PMKT CNN NEWS"), L(zh, "就绪", "READY") if ready else L(zh, "受限", "LIMITED"), "am"),
         (L(zh, "方法 M1–M4 · 期权 波动率 同业 本股", "METHODS M1–M4 · OPT VOL PEER HIST"), L(zh, "就绪", "READY"), "am"),
         (L(zh, "SEC 联系邮箱", "SEC CONTACT EMAIL"), L(zh, "已设置", "SET") if sec_set else L(zh, "未设置", "NOT SET"), "am"),
         (L(zh, "CLAUDE KEY · AI 叙述（可选）", "CLAUDE KEY · AI NARRATIVE (OPTIONAL)"), L(zh, "已设置", "SET") if ai_set else L(zh, "未设置", "NOT SET"),
@@ -797,6 +1069,28 @@ label[data-testid="stWidgetLabel"] p{font-family:'Noto Serif SC',serif!important
 [data-testid="stTabPanel"] a{color:var(--am)!important}
 [data-testid="stTabPanel"] [data-testid="stExpander"] details{background:transparent;border:2px dashed var(--scr-line)!important}
 [data-testid="stTabPanel"] [data-testid="stExpander"] summary,[data-testid="stTabPanel"] [data-testid="stExpander"] summary p{color:var(--ph)!important}
+/* ---------- a channel screen as a page section (scr- containers): the look of the old report tabs ---------- */
+[class*="st-key-scr-"]{position:relative;padding:18px 22px 24px!important;background:#0F120F;border:3px solid var(--ink);border-radius:18px;box-shadow:inset 0 0 0 4px #050605;overflow:hidden;gap:12px}
+[class*="st-key-scr-"]::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:5;background:repeating-linear-gradient(0deg,rgba(0,0,0,.22) 0,rgba(0,0,0,.22) 1px,transparent 1px,transparent 3px)}
+[class*="st-key-scr-"]::before{content:"";position:absolute;inset:-40px;pointer-events:none;z-index:6;background:#0A0D0A url(__SNOW__);background-size:200px 200px;animation:tc-snow .5s steps(1,end) both}
+[class*="st-key-scr-"] [data-testid="stMarkdownContainer"],[class*="st-key-scr-"] li,[class*="st-key-scr-"] label,[class*="st-key-scr-"] [data-testid="stCaptionContainer"],
+[class*="st-key-scr-"] [data-testid="stCaptionContainer"] p{color:var(--scr-text)!important}
+[class*="st-key-scr-"] [data-testid="stCaptionContainer"]{opacity:.8}
+[class*="st-key-scr-"] strong{color:var(--ph)}
+[class*="st-key-scr-"] a{color:var(--am)!important}
+[class*="st-key-scr-"] [data-testid="stExpander"] details{background:transparent;border:2px dashed var(--scr-line)!important}
+[class*="st-key-scr-"] [data-testid="stExpander"] summary,[class*="st-key-scr-"] [data-testid="stExpander"] summary p{color:var(--ph)!important}
+[class*="st-key-scr-"] .tc-h:first-child{margin-top:4px}
+/* ---------- step keys: where you are, and the way on ---------- */
+.st-key-u-c-nav{padding:12px 16px 14px!important}
+.st-key-u-c-nav::before{display:none}
+[class*="st-key-navrow"]{gap:8px!important;flex-wrap:wrap}
+[class*="st-key-nav_"] button{min-height:40px!important;padding:2px 12px 6px!important}
+[class*="st-key-nav_"] button p{font-size:13px!important;white-space:nowrap}
+.tc-navsep{display:inline-block;width:3px;height:34px;background:#1B1917;margin:0 6px;box-shadow:1px 0 0 #524E48}
+.st-key-navfoot{gap:12px!important;padding:4px 2px 0}
+.st-key-navfoot button{min-width:180px}
+.tc-solo .tc-stub{display:none}
 /* ---------- report channels: parts drawn by the report renderers, on the channel screen ---------- */
 .tc-h{font-family:'FusionPixel',monospace!important;font-size:24px;line-height:30px;color:var(--am);text-shadow:0 0 5px rgba(var(--am-rgb),.45);margin:22px 0 10px}
 .tc-sub{color:var(--scr-text);opacity:.85;font-size:13px;line-height:1.6}
@@ -864,6 +1158,10 @@ table.tc-table th.on,table.tc-table td.on{background:rgba(var(--ph-rgb),.08)}
 .tc-rd::before{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,0,0,.3) 0,rgba(0,0,0,.3) 1px,transparent 1px,transparent 3px)}
 h1.tc-claim{font-family:'Noto Serif SC',serif!important;font-weight:900!important;font-size:clamp(30px,4vw,52px)!important;line-height:1.15!important;margin:0 0 14px!important;
   color:var(--ink)!important;text-shadow:0 1px 0 rgba(255,245,215,.55);padding:0!important;letter-spacing:0}
+h1.tc-claim-dark{color:#F1EBDC!important;text-shadow:0 2px 0 var(--ink);font-size:clamp(24px,3vw,36px)!important}
+.tc-quote{display:flex;flex-direction:column;gap:4px;padding:10px 14px 12px;border:2px solid var(--ink);border-left:8px solid #C49A4A;background:#C4B998;
+  box-shadow:inset 0 3px 0 #D6CDB2,inset 0 -5px 0 #A4997C}
+.tc-quote>span{color:#4A4436}.tc-quote b{font-size:22px;line-height:1.4;color:var(--ink)}
 .tc-grid4{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
 .tc-grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .tc-bezel{background:#141311;border:3px solid var(--ink);padding:12px;box-shadow:inset 0 3px 0 #26241F}
@@ -899,6 +1197,52 @@ h1.tc-claim{font-family:'Noto Serif SC',serif!important;font-weight:900!importan
 .tc-reel{width:26px;height:26px;border-radius:50%;background:#59493F;border:2px solid var(--ink);display:flex;align-items:center;justify-content:center;box-sizing:border-box}
 .tc-reel-s{width:20px;height:20px}.tc-reel-l{width:36px;height:36px}
 .tc-hub{width:60%;height:60%;border-radius:50%;background:repeating-conic-gradient(#D8CEB2 0 18deg,#1B1917 18deg 60deg);border:2px solid var(--ink);box-sizing:border-box}
+.tc-mkt{display:grid;grid-template-columns:minmax(0,2.2fr) minmax(250px,1fr);gap:16px;align-items:start}
+.tc-mkt-side{display:flex;flex-direction:column;gap:12px;min-width:0}
+.tc-mktbig{font-size:clamp(64px,7vw,104px)!important;line-height:.86!important}
+.tc-splits{display:flex;flex-direction:column;gap:6px}
+.tc-split{display:grid;grid-template-columns:5.5em 5.5em minmax(80px,1fr) minmax(0,1.3fr);gap:10px;align-items:center;font-size:16px;line-height:20px}
+.tc-sv{font-size:26px!important;line-height:24px!important;text-align:right}
+.tc-dbar{position:relative;display:block;height:14px;background:var(--seg);border:1px solid #050605}
+.tc-dbar::before{content:"";position:absolute;left:50%;top:-3px;bottom:-3px;width:2px;margin-left:-1px;background:var(--dim)}
+.tc-dbar i{position:absolute;top:2px;bottom:2px;box-sizing:border-box}
+.tc-dbar i.neg{background:var(--ph);box-shadow:0 0 6px rgba(var(--ph-rgb),.5)}.tc-dbar i.pos{border:2px solid var(--ph)}
+.tc-am .tc-dbar i.neg{background:var(--am)}.tc-am .tc-dbar i.pos{border-color:var(--am)}
+.tc-tape2{display:flex;flex-direction:column;border-top:2px dashed var(--scr-line);padding-top:6px}
+.tc-trow{display:grid;grid-template-columns:6em 5em 6em 5em minmax(60px,1fr) minmax(0,2fr);gap:8px;align-items:center;font-size:14px;line-height:22px;border-bottom:1px dashed var(--scr-faint)}
+.tc-trow .tc-vt{font-size:20px;text-align:right}
+.tc-thead{line-height:18px}
+.tc-thead>span{font-size:12px}
+.tc-thead .tc-num{text-align:right}
+.tc-tfile{font-size:12px;line-height:16px;overflow-wrap:anywhere}
+.tc-prow3{display:grid;grid-template-columns:4.5em 1fr 1fr auto;gap:8px;align-items:baseline;font-size:14px;line-height:20px}
+.tc-prow3.tc-off{opacity:.55}
+p.tc-mknote{font-size:13px;color:#DCD3BA;margin-top:8px}
+.tc-delta{display:flex;flex-direction:column;gap:10px;margin-top:16px}
+.tc-delta .tc-subhead{color:#E3DAC0;border-bottom-color:rgba(227,218,192,.35)}
+.tc-dsum{font-size:16px;font-weight:700;color:#F1EBDC}
+.tc-dgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:14px}
+.tc-dstrip{padding:10px 14px 12px;gap:8px}
+.tc-chiplink{text-decoration:none}
+.tc-cats{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:14px}
+.tc-cat{display:flex;flex-direction:column;gap:8px;padding:12px 14px 14px;background:#EDE3CC;color:var(--ink);border:3px solid var(--ink);box-shadow:4px 4px 0 #0C0B09;min-width:0}
+.tc-catprop{background:#E4D8B8;border-style:dashed}
+.tc-catname{font-size:19px;font-weight:900;line-height:1.3}
+.tc-catmeta{font-size:12px;font-weight:700;letter-spacing:.04em;color:#4A4436}
+p.tc-catsum{margin:0;font-family:'Noto Serif SC',serif;font-size:14px;line-height:1.6;color:#221C14}
+.tc-catevs{display:flex;flex-direction:column;border-top:2px dashed #A99F86}
+.tc-catev{display:grid;grid-template-columns:6.4em minmax(0,1fr);gap:10px;padding:7px 0;border-bottom:1px dashed #B9AF95;font-family:'Noto Serif SC',serif;font-size:14px;line-height:1.5}
+.tc-catday{font-family:'VT323',monospace;font-size:20px;line-height:20px;color:#5A5244;white-space:nowrap}
+.tc-catsub{font-size:12px;line-height:1.5;color:#5A5244;overflow-wrap:anywhere}
+.tc-srclink{color:#7E3B2A!important;text-decoration:underline;text-underline-offset:2px}
+.tc-catwarn{font-size:13px;font-weight:700;color:#7E3B2A}
+.tc-catok{font-size:12px;font-weight:700;color:#3C5A2E}
+.tc-uprow{display:grid;grid-template-columns:7.2em minmax(0,1fr);gap:12px;align-items:center;padding:6px 0}
+.tc-upday{font-size:24px!important;line-height:24px;color:#FFB23E}
+.tc-uprow b{color:#F1EBDC;font-size:17px}.tc-uprow .tc-catsub{color:#CFC4A6;font-size:13px}
+.tc-heads{display:flex;flex-direction:column}
+.tc-headrow{display:grid;grid-template-columns:4em minmax(0,1fr) auto;gap:10px;align-items:baseline;padding:5px 0;border-bottom:1px dashed #46423C;font-size:14px;line-height:1.5}
+.tc-headrow .tc-srclink{color:#E3DAC0!important}.tc-headrow .tc-catsub,.tc-headrow .tc-catday{color:#B5AC93}
 .tc-feeds{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
 .tc-feeds-wide{grid-template-columns:repeat(auto-fill,minmax(270px,1fr))}
 .tc-feedm{display:flex;flex-direction:column;gap:6px;padding:12px 12px 14px;background:#2F2C29;border:2px solid var(--ink);box-shadow:inset 0 2px 0 #46423C,inset 0 -5px 0 #201E1B;min-width:0;color:#E3DAC0}
@@ -985,7 +1329,12 @@ h1.tc-claim{font-family:'Noto Serif SC',serif!important;font-weight:900!importan
   .tc-ptext{font-size:18px;line-height:24px}.tc-huge{font-size:84px!important}.tc-mark{font-size:16px}
   .tc-tape{grid-template-columns:minmax(0,1fr) auto}.tc-tape .tc-minicas{display:none}
   .tc-zones{font-size:10px}
+  .tc-mkt,.tc-dgrid,.tc-cats{grid-template-columns:minmax(0,1fr)}.tc-tape2{overflow-x:auto}.tc-headrow{grid-template-columns:4em minmax(0,1fr)}.tc-headrow>.tc-catsub{grid-column:2}
+  .tc-split{grid-template-columns:4.5em 5em minmax(60px,1fr)}.tc-split>.tc-small{grid-column:1/-1}
+  .tc-trow{grid-template-columns:4.6em 4.4em 4.4em 4.4em minmax(30px,1fr)}.tc-trow>.tc-tfile{grid-column:1/-1}
   [data-testid="stLayoutWrapper"]:has(>.st-key-u-c-status-bar){position:static}
+  .st-key-navfoot button{min-width:0}.tc-navsep{display:none}
 }
-@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}[data-testid="stTabPanel"][role="tabpanel"]::before{display:none}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}
+  [data-testid="stTabPanel"][role="tabpanel"]::before,[class*="st-key-scr-"]::before{display:none}}
 </style>""".replace("__PIX__", PIX).replace("__VT__", VT).replace("__GRAIN__", GRAIN).replace("__SNOW__", SNOW)
