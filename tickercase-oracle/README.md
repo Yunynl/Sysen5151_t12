@@ -2,19 +2,22 @@
 
 **Write one sentence about a stock, such as "NVDA will hit $300 in 3 years", and get a probability range you can trace.** Four independent methods are computed from free public data, every number carries its source and time, and an optional AI narrative has each of its numbers checked against the facts it cites.
 
-![Console page: claim input, system settings, check and confirm](docs/screenshots/console.jpg)
+![Step 2 of 3: the key inputs with their sources, more inputs folded, confirm and run](docs/screenshots/console.jpg)
 
-![Report page: status bar, claim and K-line](docs/screenshots/report-kline.jpg)
+![Report page 1 of 7, Answer: step keys, the claim and the probability range](docs/screenshots/report-kline.jpg)
 
-![Report page: probability range from four methods, and the eight data sources](docs/screenshots/report-probability.jpg)
+![Report page 3 of 7, Market: the last 20 days split into market, peers and own, and why the probability moved](docs/screenshots/report-probability.jpg)
 
 ## What it does
 
 - **Reads the claim.** Fixed rules (no AI) pick out the ticker, target price and time frame, and whether the claim means touching the price before the deadline ("hit", "冲到") or closing above it on the date. Public data fills in the price, share count and financials. Every value shows where it came from, and the user confirms the exact inputs, which are tied to a SHA-256 fingerprint.
 - **Computes the probability in code.** M1 uses the option market's implied volatility (Black-Scholes N(d2), and the first-passage formula for touch claims), M2 the same formulas with historical volatility, M3 the share of similar-size US companies that grew as fast as the claim needs (SEC XBRL frames), and M4 this stock's own past windows of the same length. The headline is the range of the usable methods, and disagreements between them are explained.
-- **Shows the evidence.** Eight data sources (Yahoo option chains and prices, the 10-year Treasury yield, SEC filings and XBRL facts, peer base rates, Form 4 insider trades, Polymarket, CNN Fear & Greed), a K-line, a layered plain-language report, an event-scenario calculator and a fundamentals check (an evidence-as-of verdict with recheck conditions).
+- **Shows the evidence.** Ten data sources (Yahoo option chains and prices, the 10-year Treasury yield, SEC filings and XBRL facts, peer base rates, Form 4 insider trades, Polymarket, CNN Fear & Greed, the market structure: SPY, QQQ, IWM, VIX and a peer basket, and news: headlines, 8-K press releases and the earnings date), a K-line, a layered plain-language report, an event-scenario calculator and a fundamentals check (an evidence-as-of verdict with recheck conditions).
 - **Checks the AI.** The optional narrative (Claude) sees only a numbered fact table. A verifier checks every number in every sentence against the facts it cites, and a narrative already written for the same facts is reused. Measured cost: about $0.06 per narrative.
-- **Reproducible.** Live, record, replay and synthetic data modes, exact `Decimal` arithmetic, and 216 offline tests.
+- **Separates the market from the stock.** The last 20 trading days are split into the part that came with the market, the part that came with similar stocks and the stock's own part, day by day with the SEC filings of each day; when the same claim is run again, the page shows why the probability moved (price parts, volatility, time, rate).
+- **Tracks what the price is waiting for.** A catalyst register per stock (a product launch, a deal, an approval): Claude proposes catalysts and their dated history from 8-K press releases and headlines, code checks every citation, date and number, you confirm, and each event shows how the stock reacted. Dated catalysts feed the event scenario.
+- **One step per page.** Three input steps (claim, check, run) and seven report pages (answer, methods, market, events, fundamentals, narrative, data), each answering one question, with explanations folded under ⓘ.
+- **Reproducible.** Live, record, replay and synthetic data modes, exact `Decimal` arithmetic, and 332 offline tests.
 
 Chinese and English interface. Research use only; not investment advice.
 
@@ -39,11 +42,118 @@ TickerCase is a stock-only take on [komako-workshop/digital-oracle](https://gith
 
 The range is [min, max] of the usable methods; the tier follows the middle estimate (<5% lottery, 5–20% unlikely, 20–50% possible, >50% likely). Where methods disagree, the page says which is higher and what each measures. Context layers: insider Form 4 transactions split by code (only P purchases and S sales are trades by choice; grants, exercises and tax withholding are not selling), Polymarket contracts on the ticker, CNN Fear & Greed, S&P 500 and Nasdaq-100 returns over the same length. The page shows each data step as it runs and which ones failed. A live RKLB run fetches all eleven steps in about 12 seconds.
 
+## Model to code (v0.14.0)
+
+The code now names the systems model it was built from (Innoslate project 650). The function worked through in full is A2 Acquire Dated Evidence, performed by C.2 Evidence Acquisition Subsystem:
+
+- **One module per function.** `src/tickercase/acquisition.py` is A2. Its docstring carries the function ID, and the signature of `acquire_dated_evidence` is the ICOM of the A2 box: the inputs and controls are the parameters (confirmed claim, source evidence, provider access terms, data mode setting) and the outputs are the result (evidence query, evidence set, source error records). A2.1 to A2.5 are one function or class each. The case workflow in `service.py` calls it; the pages and the numbers are unchanged.
+- **Traceability.** [docs/traceability.md](docs/traceability.md) lists function ID, module path, requirement ID and test name; [docs/route-table.md](docs/route-table.md) maps each entry point (page key, API route, command) to the step of use case UC.1 it serves.
+- **Contract.** [contracts/api-v1.yaml](contracts/api-v1.yaml) has one operation per internal flow of the A2 diagram (`POST /evidence/filings`, `/evidence/market`, `/evidence/context`) and `POST /evidence` for the whole function. A test checks every `operationId` against the running API.
+- **Tests named by requirement ID.** `tests/test_functional_requirements.py` has one test per requirement (`test_SR_1_2_1_…`, `test_CR_2_5_1_…`); `.github/workflows/tests.yml` runs it and the whole offline suite on every push.
+- The insider summary now carries the URL and capture time of the filing list it was read from (found by the SR.1.2.1 test). `TICKERCASE_TODAY=YYYY-MM-DD` fixes the evaluation day of the page, so a synthetic or replayed case gives the same pages on any day.
+
+## Consistent numbers and plain wording (v0.13.2)
+
+The second group of bugs from the same review:
+
+- **One time base for the share count.** A target share count derived as current shares × (1 + rate)^horizon is now checked (E3) on that rate. E3 used to measure it from the reported share date over a longer span, so the default trend looked lower than itself (7.36% shown as 6.82%), and for short claims the default was judged contrary and pulled the verdict down.
+- **One required growth.** When the base is the reported fiscal year, the calculation runs the growth from that year's end, as E1 and the sensitivity table do (one RKLB claim showed 61.65% in one place and 45.75% in two others). The sensitivity table says that its columns count from today and how many years the base adds.
+- **One deadline rule.** Whole-year horizons are calendar years ("2 years" from 2026-10-28 ended on 2028-10-27 while "3 years" ended on 2029-10-28).
+- **Method texts that match the numbers.** M1 names the strike whose volatility it used (the highest listed one when none is listed at the target); M4 gives both counts, ending above and reaching at some month-end; M2 says it is M1's formula with past volatility; M1 is described as risk-neutral.
+- **The sentence says more.** "10万" without a verb is read as the target, and a valuation in the claim ("按 40 倍市盈率", "P/S 20", "at 30x P/S") sets the method and multiple instead of being ignored.
+- **Chinese throughout.** SEC notes, the Fear & Greed label and the disclaimer are in Chinese; raw "{...}" JSON became short lines; recheck conditions name fields and amounts plainly; course codes (OA.10–OA.14) left the page; "元" became 美元 where dollars were meant.
+- **A missing earnings date is not a failure.** When Yahoo's calendar lists no date yet, the step is a note instead of a red warning lamp.
+- **Smaller.** Method marks that sit close on the ruler share one label; scenario labels no longer print over each other; the required move and its yearly rate sit on two lines; a correlation of 0.297 shows as 0.297, not "0.30, below 0.3"; Δ rows add up to the change shown; R2 drops a clause that was already true for buyback assumptions; "touch is likelier than close" is shown as a note, not a divergence.
+
+A second round of the same four reviewers re-tested every listed bug on this version and found more, fixed here too:
+
+- **Each report keeps its own scenario.** The ④ sliders, date and catalyst ticks of the previous report carried over to the next one in the same session (a date past the new deadline even raised an error); a new run now starts them from its own stock.
+- **A sentence about another stock is a new claim.** A ticker typed on ② used to win over the stock named in a new sentence, so a report titled "英伟达…" carried Apple's numbers; the sentence now wins, and the target and time typed for the old stock are cleared, with a note.
+- **New pages really open at the top.** The scroll script was identical on two consecutive pages, so the browser kept the old element and did not run it again; each one is now new.
+- **Short claims.** Whole months are calendar months and parts of a year keep four decimals ("明年" ends on 31 December, "一个月内" a month later to the day); a one-month M4 window cannot tell touching from closing, so it is not used for a touch claim; the K-line keeps a readable future zone ("not to scale" when it is widened); no yearly rate is shown for a claim shorter than a year; a range below 0.1% reads "<0.1%".
+- **Checks that read right.** E2 treats a default multiple equal to today's after rounding as equal; E4 speaks of dilution only after a loss; the event move ignores expiries in the next two days; benchmarks are annualised over the real span from the start month's close; a target not above the price is flagged; missing XBRL shares or revenue (common for foreign filers) is explained; the catalyst number check skips dates and allows for written precision ("2.6亿" for $255.4 million) and reports in Chinese.
+- **Wording.** CNN's own Fear & Greed bands; "WARN 0" no longer claims complete coverage; notes (·) are kept out of "key divergences"; all-10b5-1 selling is not a signal against the claim; sources under ② read in Chinese; legends, counts and plurals match what is shown.
+
+A third round found these, also fixed here:
+
+- **Yesterday's close after midnight UTC.** Just after 00:00 UTC Yahoo sends the latest session's bar with open, high and low but no close, so every run fell back a day (RKLB 58.60 → 58.31). The quote's own regular-market price for that same exchange day now fills the close.
+- **Mis-scaled companies leave M3.** A company whose two SEC revenue concepts differ by more than 100x in one year (Tigo Energy: 81,323,000 and 81,323,000,000) is left out, and the M3 fold says how many were and which size band was used (0.5x–2x, or 0.25x–4x when fewer than 30 companies qualify).
+- **Prices that look like years.** "涨到 2000", "$1950" and "reaches 2000" are targets; "2030年" and "by 2030" stay years. "下个月", "下周" and "下季度" are horizons.
+- **The ③ Run key opens the run page** and no longer runs the case again; the page offers "open the current report" and a separate "run again".
+- **A new stock starts from P/S.** A valuation method named in one sentence ("按 40 倍市盈率") no longer stays for the next stocks; a typed time or target that is not a number gives way to the sentence.
+- **Short claims, everywhere.** ⑤ E6, the calculations table, ⑥'s layers and the benchmarks state the move needed by the date instead of a yearly rate; ⑥'s time view leaves out rows after the deadline; Δ shows the time left in days under a year.
+- **Small numbers.** Every range and method list uses one rule: "<0.1%" below a tenth of a percent, one decimal below 1% ("<0.1%–0.6%"), never "-0.0%"; the options-vs-base-rate divergence is not drawn between two near-zeros.
+- **Smaller.** The event move uses one- and two-week expiries and says "from today to the first expiry" when none lies before the event; the expected year of a catalyst may come from its source's own date ("later this year"); the claim's path in the scenarios ends at the target; a claimed multiple equal to today's makes one scenario row and no "expansion" upside; multiples show two decimals; an empty upside card shows "—"; repeated 8-K links are shown once; DEMO data is labelled synthetic; the advanced fold on ② stays open while its label changes; "万亿" and K-line ranges do not break mid-word; the ② levels title is no longer cut after a fold opens (screen panels clip instead of hiding overflow, which focus could scroll); the remaining English labels (evidence sources and keys on ⑤, ⑥'s data mode, ⑦'s run log, the no-filings note, the revenue chart's line) read in Chinese.
+
+A fourth round found these. This time each was fixed as a class, not only where it was reported, and a test now scans for the class:
+
+- **M4 counted quarters as months.** For stocks listed before about 1985 (AMD, AAPL) Yahoo answers the full-history request with quarterly bars, so AMD's "24-month windows" were partly 24 quarters (145 windows, a best window of +6611%) and its M4 of 81% topped the headline range. The monthly request now names an explicit span (1970 to a fixed far date, which keeps monthly bars and a stable URL for replay), and only a run of consecutive months is used (AMD: 478 windows, best +641%).
+- **Funds are not companies.** Gold, bitcoin and other commodity trusts and ETFs file 10-Ks; their "revenue" follows what they hold. They are left out of M3 and counted in its fold (AMD: 4 left out, base rate 2.0% → 0.7%).
+- **Another data source is a new confirmation.** Switching DEMO → LIVE kept "confirmed", and RUN then took the synthetic price and revenue for real ones; the switch now releases the confirmation, clears values filled from the old source and fills them again from the new one.
+- **One way to write a probability.** A single formatter (`tickercase/fmt.py`) writes every probability on every page: "<0.1%" and ">99.9%" for bounds, "0.0%" and "100.0%" only for exact counts, one decimal below 1%, "≈" dropped before a bound. Amounts keep two decimals everywhere ("4.30 万亿", not "4.3 万亿" beside it). The required growth in the calculations table is E1's own number, not a recomputation that differed in the last digit.
+- **Chinese throughout, checked.** ⑤'s calculations table (formulas, inputs, assumptions) and input-source table, ⑦'s raw tables (column names, amounts in 亿), the DEMO example's labels, HIST's data column and the last "rules-v1" are translated. `tests/test_page_scan.py` renders all seven report pages of five DEMO cases in Chinese and fails on raw English keys, "-0.0%", a range of zeros, None/nan or an English data-mode word.
+- **Medium.** The insider check says when it read only part of the year's Form 4 filings ("在 80 份中读取的最近 40 份里"); "the price outran the business" is drawn only when it did (AMD's profit grew faster than its price); a report page opened from HIST scrolls to the report, not to the table above it; a sentence's date ("明年") counts from the reference date, so the deadline is 31 December.
+- **Light.** The K-line's target and price tags are pushed apart when close; the event move fetches the expiries right around the earnings day and weekly ones in the first five weeks (NVDA's 11-17 earnings: 11-13 and 11-20, not 11-13 and 12-04); "涨一半" and "涨三成" are targets; the 15-point rule that decides "Not Supported Today" is stated in the E1 rule; the ① scenario keeps exactly the own part shown on ③, and Δ's price parts add up to the move shown; "过去 N 年" says how long the price history is; the range line counts the methods in it separately from those shown for context; ③ says why there is no Δ when there is no earlier run; ④ explains when the deadline is too close for an event date instead of raising an error; a price is never a past year in the checks ("涨到 2000").
+- **Health check before release.** A live run of the pages found two more of the same classes: a rate that rounds to zero printed "-0.0%" in AAPL's sensitivity table (rates now go through one formatter too, `fmt.pct`), and a base period filled on a Chinese page showed in Chinese on English pages (labels now read in the page's language both ways).
+
+## Fixes from a persona review (v0.13.1)
+
+Four reviewer agents used v0.13 with live data, each in one role (a retail investor, a professional investor, an economist and a first-time visitor), and reported bugs. This version fixes the first group:
+
+- **The previous stock's numbers no longer stay.** When the ticker changes (a new sentence about another stock, a sentence without a stock, or a ticker typed on ② Check), the previous stock's price, shares, financials and valuation inputs are cleared and filled again for the new ticker, with a note saying so. Before, a sentence without a readable stock kept the old stock's price, ARM accepted it for another ticker, and the report used the wrong price.
+- **Signals are sorted by direction.** "Insiders made no open-market purchases while selling" and "market mood is fearful" are signals against the claim (▼), no longer listed with the checks that agree and marked green ++; checks that agree against the claim are marked −−; "no notable disagreement" is no longer marked as a divergence (!!). Reports stored earlier are sorted the same way when shown.
+- **READ says why it stopped.** When the sentence holds no US-listed stock, ① Claim now shows the reason (crypto and shares listed outside the US are not covered) instead of nothing.
+- **A new page opens at its top**, instead of keeping the scroll position of the page before.
+- **Notes are readable.** The ⓘ notes on ② Check and ⑥ Narrative were dark text on the dark fold.
+- **Switching 中 / EN keeps the page.** On a history report the view switch lost its value and the next switch fell back to ① Claim.
+- Smaller: a close-above claim reads "P(close above X on date)" (it said "by"); "Use the market's size" can set an event move below 5%; "inputs invalid" goes away once the inputs change; the "touch is much likelier" divergence needs at least a 1% touch probability.
+
+## Step pages (v0.13)
+
+The console and the report were two long pages: the report ran to about 13 screens (11,600 px for an RKLB case) with nine units one after another, and the console mixed the input with the guide to every data source and method. v0.13 shows one step per page. Logic, inputs, stored cases, the API and the CLI are unchanged.
+
+- **Step keys.** Under the bridge a row of keys shows where you are: INPUT ① Claim ② Check ③ Run, then REPORT ① Answer ② Methods ③ Market ④ Events ⑤ Fundamentals ⑥ Narrative ⑦ Data. The current key is lit, and any key opens its page. ③ Run is live only once the inputs are confirmed, and the report keys only while the inputs have a report. On report pages the keys sit in the status bar (claim, range, the other condition, the last run, warnings), which stays on screen; ⑦ Data shows the warning count. Every page ends with ◀ back and next ▶.
+- **Input.** ① Claim holds the sentence, the two examples and READ, the data source, and the three most recent tapes. READ opens ② Check when it finds a ticker; problems stay on ① with the message. ② Check shows the sentence and the five key inputs (what counts as coming true, ticker, target, time, reference price and date) with their sources, and "↻ Fill again" for a changed ticker. Valuation, shares, peers and the extras fold under "More inputs · 14 more, n of them ◇ default assumptions", which opens by itself when one of them is wrong or missing. ARM and RUN sit at the bottom. ③ Run shows the pipeline screen and opens ① Answer when it finishes; a failure stays there with "◀ Back to ② Check".
+- **Report.** ① Answer: the claim, the probability screen and the K-line. ② Methods: the four method strips, the curve over price levels and how each method works. ③ Market: the market, peer and own split and the change since the last run. ④ Events: the catalyst register and known dates, with the event scenario below it ("→ scenario" fills it on the same page). ⑤ Fundamentals: the verdict panel, the signals that agree and diverge, the key numbers and rationale, then evidence, calculations, sensitivity and recheck conditions as four channel keys. ⑥ Narrative: the AI narrative; the rules-based layered report folds under it once a narrative exists. ⑦ Data: the ten source readings, system warnings, the raw tables (folded) and the run log.
+- **Less text in view.** Explanations (how the scenario is computed, the split's caveats, the Shapley note, the register and scan notes, the seal legend) fold under "ⓘ Notes" on the part they explain. Nothing was removed.
+- **Setup and guide.** A third view on the bridge, "SYS · setup", holds the data source, the SEC contact email, the Claude key and the narrative-after-RUN switch, and the guide to the ten data sources and four methods that used to fill the console. A missing SEC email is still asked for on ① Claim in live mode.
+- **Reload.** The address carries the open report (`?case=…&p=market`), so a reload reopens the same page from the case store without the start-up screen. Inputs that were never run are not kept.
+- **Phone width.** The keys wrap; the market screen no longer overflows its unit, and its day table scrolls sideways.
+
+Measured on the same RKLB case, opened from HIST both times: the pages are 2,100 to 3,000 px each (⑥ Narrative 3,600 px, as the case has an AI narrative), instead of one 11,600 px page.
+
+## Catalyst register (v0.12)
+
+The probability methods see the price; they do not see what the price is waiting for. For RKLB that is Neutron's first launch and the Iridium deal; for INTC, 18A and foundry customers. v0.12 keeps a register of these catalysts for each stock, with their dated history, and measures how the stock reacted each time the story changed. The headline range is unchanged.
+
+- **Sources (code).** Sentences from the company's 8-K press releases of the last year (the Exhibit 99 file, with the safe-harbor and "About" boilerplate cut, only sentences with dates, plans or milestones kept) and headlines from Google News (RSS search, `when:730d` so a recorded search replays) and Yahoo Finance. Every source has a date, an outlet and a link; articles themselves are not read.
+- **Proposal (Claude, two calls).** "SCAN" asks Claude for the main themes and their search words, runs a targeted two-year Google News search per theme (theme headlines come first, spread over time so the early history stays in), then asks Claude for the catalysts: name, kind, status, the latest stated timing (2027, 2027-H1, 2027-Q2, a month or a day), and the dated events, each citing source ids. Structured JSON output, the model and effort of the narrative setting, server-side fallbacks on.
+- **Checks (code).** Cited ids must exist, each event must be dated like one of its sources (±1 day), the year of the stated timing must appear in a cited source, and every number in the text (English and Chinese) must appear in a cited source. Problems are listed on the card, and such proposals start unticked.
+- **Reactions (code).** Each event gets the stock's move over the event day and the next (news after the close moves the next session), and the part the market and the peers do not explain, with the betas of the v0.11 split.
+- **Your decision.** Tick the proposals to keep and press CONFIRM. Accepted catalysts go into `data/catalysts/<TICKER>.json`; names you do not accept are remembered and not proposed again; a catalyst can be removed later. Every later RUN reads the register and measures reactions for new events; a later SCAN may propose updates (new events) to a confirmed catalyst.
+- **Dates and scenarios.** The CAT unit lists the known dates before the claim's deadline: the next earnings (Yahoo calendar, marked when Yahoo only estimates it) and confirmed catalysts with a stated timing (the middle of the span: 2027 → 2027-07-01). Each row shows the move the option market prices around the date, warns when the expiries around it are far apart, and "→ scenario" fills the date and that move into RPT · CH2.
+- **Elsewhere.** The flagged days of the MKT tape list the headlines published since the previous close; a new data channel (CH-10 NEWS); the AI narrative gets the earnings date, the confirmed catalysts, their latest events and reactions (prompt version 4). The CAT unit sits under MKT, so the later units move down one (FEED 06 with ten channels, RPT 07, SIG 08, NAR 09) and the jump keys gain CAT.
+
+A live RKLB scan on 2026-10-26 took about 60 seconds and two calls (about 42,000 input and 4,000 output tokens, about $0.24 at list price) over 305 sources. It proposed six catalysts, all passing the checks: Neutron's first launch (2025-11-10 slip to mid-2026; 2026-01-23 tank rupture in testing; 2026-05-07 still aiming for late 2026; 2026-08-10 the 2026 window narrowing; 2026-10-14 moved to 2027, a two-day own move of −8.9%), the Iridium acquisition (signed 2026-06-29, +10.8% own), the at-the-market share sale that funds it, the protest of NASA's Mars orbiter award, and two contracts. A following RUN read the register, found the next earnings on 2026-11-09, and listed the 2026-10-15 headlines ("Rocket Lab Announces Neutron Launch Delay", "...slips to 2027") next to that day's −10.6% own move.
+
+## Market structure and probability change (v0.11)
+
+A stock can fall 25% in two weeks for two different reasons: news about the company, or money leaving everything that trades like it. The four methods all start from today's price, so both kinds of fall go into the probability in full and the page could not say which happened. v0.11 measures the split and shows it; the headline range is unchanged and nothing assumes that a fall will reverse.
+
+- **The split (UNIT 04 · MKT).** Daily log returns of the stock are regressed on SPY and on a peer basket's move beyond its own market exposure, over the 120 trading days before the last 20. Over those last 20 days the move is then split into market (beta × SPY), peers (beta × the basket's extra move) and own (the rest); the three parts add up to the window's return. Each day is listed the same way, and a day whose own part exceeds twice the daily residual is marked with ◆ together with the SEC filings of that day and the day before (8-K item numbers are now read from SEC submissions and named: 7.01 Reg FD, 8.01 other events, 2.02 results...). A statistical split, not a cause: the peers have news of their own.
+- **The peer basket.** "READ" fills it with Yahoo Finance's similar stocks as a ◇ default (for RKLB: ASTS, NBIS, IONQ, IREN, CRWV); it can be edited in UNIT 02 (up to 8, comma-separated). The split keeps a peer only when its daily returns correlated at least 0.3 with the stock and lists the others with their correlation (for INTC, Yahoo's list includes PFE, which is left out). SEC's industry-code company lists were tested and left out: for SIC 3760 they return mostly inactive filers, without Rocket Lab itself.
+- **Market readings.** SPY, QQQ, IWM, VIX and 3-month VIX with their change over the window, and whether the VIX curve is inverted.
+- **A scenario line, not a forecast.** Under the headline: the range the same methods give if the market and peer parts of the window returned (the price divided by those two parts). M3 does not depend on the price; M4 is recounted from the monthly closes.
+- **Why the probability moved (Δ).** When an earlier run of the same claim exists (same ticker, target and condition, deadline within about three months, older prices), the unit shows the change of M1 and M2 split into market, peers, own, volatility, time and rate. The split is a Shapley value: it does not depend on the order of the steps, and the parts add up to the change. The status bar shows the earlier range.
+- **Page.** The new unit sits under the probability screen, so the later report units move down one (FEED 05 with nine channels, RPT 06, SIG 07, NAR 08) and the jump keys gain MKT. The raw-data channel lists the daily split with the betas and every URL the step read. The AI narrative gets the split, the marked days, the scenario (labelled as one) and the change as facts; its prompt version is now 3.
+
+A live RKLB run on 2026-10-26 ("RKLB三年内股价到达200", touch by 2029-10-23) takes about 22 seconds: range 16.5–16.9%, against 29.5–29.8% on 2026-10-06. Over the 20 trading days to 2026-10-23 RKLB fell 28.9%: market −4.6%, peers −27.2% (ASTS, IONQ, IREN; beta 0.79), own +2.9%. 2026-10-15 is the one marked day, −10.1% on its own, the day after the 8-K of 2026-10-14 (7.01, 8.01) that moved Neutron's first launch. M1 went from 29.8% to 16.5%: market −3.1, peers −9.0, own −0.3, volatility −0.7, rate −0.2 percentage points. If the market and peer parts returned, the price would be about 76.48 and the range 29–30%.
+
 ## Console page and K-line (v0.9)
 
 The page is redrawn as a cassette-futurist console (design "驾驶舱 v1.1"). Logic, inputs, stored cases, the API and the CLI are unchanged.
 
-- **Two pages.** The console: the claim box (UNIT 01 · CLM) with READ; the system unit (data source, SEC contact email, Claude key, and an optional "write the narrative after each RUN", off by default); the check-and-confirm unit (UNIT 02 · CNF), where every input shows where it came from (✎ claim, ⓘ public data, ◇ default assumption, · typed by you) and ARM confirms; the eight data channels and four methods a case uses; the three most recent tapes. RUN shows each data step on a pipeline screen, then opens the report: a status bar that stays on screen (range, the other condition, warnings, jump keys), the claim (UNIT 01), the K-line (02), the probability screen with the four method strips (03), the eight source readings (04), the report as five channels (05: report, scenario, levels and methods, fundamentals, raw data), signals and the fundamentals verdict (06), and the AI narrative printed on continuous paper (07). "◀ NEW" returns to the console with every input kept; an edit there makes the report stale (it stays under HIST).
+- **Two pages.** The console: the claim box (UNIT 01 · CLM) with READ; the system unit (data source, SEC contact email, Claude key, and an optional "write the narrative after each RUN", off by default); the check-and-confirm unit (UNIT 02 · CNF), where every input shows where it came from (✎ claim, ⓘ public data, ◇ default assumption, · typed by you) and ARM confirms; the eight data channels and four methods a case uses; the three most recent tapes. RUN shows each data step on a pipeline screen, then opens the report: a status bar that stays on screen (range, the other condition, warnings, jump keys), the claim (UNIT 01), the K-line (02), the probability screen with the four method strips (03), the eight source readings (04), the report as five channels (05: report, scenario, levels and methods, fundamentals, raw data), signals and the fundamentals verdict (06), and the AI narrative printed on continuous paper (07). "◀ EDIT" returns to the console with every input kept; an edit there makes the report stale (it stays under HIST). "+ NEW" clears the inputs for a new claim; the finished case stays under HIST.
 - **K-line.** The daily price request now keeps open, high, low and volume as well (no extra request) and builds daily (about 6 months), weekly (2 years) and monthly (5 years) candles, stored as `MarketSnapshot.kline`. The chart has a timeframe switch, a cursor (hover or ◀ ▶), the target line and a zone up to the deadline that holds only the computed probabilities, never a forecast path. Up bars are hollow and down bars solid, so red is not used for prices. A source with closes only, and cases saved before v0.9, get a close line instead.
 - **Rules of the look.** Light only inside screens (phosphor green, or amber with the GRN / AMB switch); cel shading only on hardware; red only for system warnings (failed sources, filing coverage gaps), while market divergences are amber; motion in steps, only on the first view of a new report, and off under reduced motion. Fonts: Fusion Pixel 12px and VT323 (both OFL, in `static/fonts`), IBM Plex Mono and Noto Serif SC (Google Fonts). On narrow screens the units stack and the data bus folds away.
 - **Start-up screen.** Each time the page opens, the console powers on first: the emblem's candle lights, the two K-line bars rise and a self-test types out on the screen (version, data sources, methods, SEC email, Claude key, number of stored cases, data mode), all read from the real configuration; with no SEC email in live mode the WARN lamp turns red. About 1.5 s of stepped motion; ENTER (key or button) opens the console at any moment, and it shows once per session. `TICKERCASE_BOOT_SCREEN=0` opens the console directly.
@@ -79,14 +189,14 @@ It does **not** trade, manage portfolios or give investment advice. The probabil
 
 ## Flow (UC.1)
 
-1. Write the claim as one sentence. "识别并补全" (Read and fill in) reads the ticker, target price and time frame from it by fixed rules (no AI): tickers such as `TSLA` or `$TSLA` checked against SEC's ticker list, common Chinese and English company names, prices such as "1000一股", "$1.5k", "两百美元", relative targets such as "翻倍", "10x", "涨50%", and times such as "2030年", "五年后", "in 3 years", "明年", "18个月". It then adds reference values from public data (latest close, reported shares, latest annual revenue / net income) and default assumptions for empty fields (target shares = current shares, multiple = today's multiple). Every filled value is visible and labelled with its source. (OA.1, OA.4)
+1. Write the claim as one sentence. "识别并补全" (Read and fill in) reads the ticker, target price and time frame from it by fixed rules (no AI): tickers such as `TSLA` or `$TSLA` checked against SEC's ticker list, common Chinese and English company names, prices such as "1000一股", "$1.5k", "两百美元", relative targets such as "翻倍", "10x", "涨50%", and times such as "2030年", "五年后", "in 3 years", "明年", "18个月", "999天后", "两周内" or "in 30 days". Horizons from about one month to 10 years can be evaluated; a shorter or longer time frame is read but blocked with a message that names the limit. Tickers that are also English words (BE, IT, ON) are read when written in capitals and listed by SEC, with a note. Reading a different sentence replaces or clears the values read from the previous one; values you typed yourself are kept, and the message names them with what the sentence says. It then adds reference values from public data (latest close, reported shares, latest annual revenue / net income) and default assumptions for empty fields (target shares = current shares, multiple = today's multiple). Every filled value is visible and labelled with its source. (OA.1, OA.4)
 2. Confirm. The confirmation is bound to a SHA-256 fingerprint of the exact inputs; any edit makes it stale. (OA.5)
 3. Deterministic calculation (`Decimal`, no network). (OA.8)
 4. Public evidence: SEC filings, SEC XBRL financial facts, daily prices. (OA.6, OA.7, OA.9)
 5. Deterministic evidence checks classified as supporting / contrary / missing / context, a verdict and recheck conditions. (OA.12–OA.14)
 6. Result with calculations, evidence and sources, verdict, recheck conditions, gaps, provider errors and the data mode of every part. (OA.15)
 
-Not implemented yet: AI extraction for sentences the rules cannot read (OA.2–OA.3 currently use rules) and AI-drafted analysis of filing text (OA.10–OA.11).
+Not implemented yet: AI extraction for sentences the rules cannot read (OA.2–OA.3 currently use rules). Filing text is read since v0.12, for the catalyst register only (8-K press releases); the evidence checks still use XBRL facts and filing metadata.
 
 ## Plain report
 
@@ -115,15 +225,16 @@ Page:
 streamlit run app.py
 ```
 
-The page is in Chinese and English (中 / EN on the bridge at the top). On the console press "EX-1 合成示例 P/S" (or EX-2 for P/E), then "ARM 确认输入", then "RUN 生成报告". The examples use the fictional company `SYNT` and synthetic data.
+The page is in Chinese and English (中 / EN on the bridge at the top). On ① Claim press "EX-1 合成示例 P/S" (or EX-2 for P/E); ② Check opens with the example's inputs. Press "ARM 确认输入", then "RUN 生成报告"; the report opens on ① Answer, and the step keys or next ▶ lead through the seven pages. The examples use the fictional company `SYNT` and synthetic data.
 
-For a real company choose LIVE in the SYS unit. If no SEC contact is configured, the SYS unit asks for an email and saves `SEC_USER_AGENT` to the local `.env`. Write the claim, press READ, check the values and their sources in UNIT 02, then ARM and RUN. "◀ NEW" goes back to the console. Past cases are under HIST, where two or more can be compared side by side; ▶ PLAY on a tape on the console opens one directly.
+For a real company choose LIVE on ① Claim. If no SEC contact is configured, the page asks for an email and saves `SEC_USER_AGENT` to the local `.env` (also under SYS · setup, with the Claude key). Write the claim and press READ, check the values and their sources on ② Check, then ARM and RUN. The ② Check key goes back to the inputs with everything kept; "+ NEW" starts an empty claim. Past cases are under HIST, where two or more can be compared side by side; ▶ PLAY on a tape on ① Claim opens one directly.
 
 API:
 
 ```bash
 uvicorn --factory tickercase.api:app_factory --reload
 # POST /claims/extract, POST /claims/validate, POST /claims/confirm, POST /cases, GET /cases/{id}, GET /reference/{ticker}, GET /health
+# A2 on its own: POST /evidence, POST /evidence/filings, POST /evidence/market, POST /evidence/context (contracts/api-v1.yaml)
 ```
 
 Command line:
@@ -139,7 +250,7 @@ python -m tickercase.cli run examples/synthetic_claim_ps.json --sec-mode synthet
 | `claim_text`, `ticker`, `currency` | required | currency is a 3-letter ISO code |
 | `target_price` | required, > 0 | the claim |
 | `reference_price`, `reference_price_date` | required, > 0 | reference value; typed or prefilled from the quote source |
-| `horizon_years` | required, > 0 | assumption, fractional allowed |
+| `horizon_years` | required, from 0.08 (about one month) to 10 | assumption, fractional allowed; the reference date plus the horizon must be after today |
 | `target_assumed_shares` | required unless derived, > 0 | share count at the target date; give it directly, or give `current_shares` + `share_change_rate` |
 | `share_change_rate` | optional assumption | yearly share change between -0.5 and 1 (0.01 = +1% a year); target shares = current x (1 + rate) ^ horizon |
 | `share_change_mode` | optional | `trend`, `flat`, `rate` or `absolute`; records how the page chose the share count |
@@ -150,6 +261,7 @@ python -m tickercase.cli run examples/synthetic_claim_ps.json --sec-mode synthet
 | `filings_since` | optional | start of the filing window; enables the coverage check |
 | `probability_drift` | optional extra | yearly drift assumption, between -1 and 1; enables the probability section |
 | `probability_volatility` | optional extra | yearly volatility, > 0 and <= 3; defaults to historical volatility |
+| `peer_tickers` | optional | similar stocks for the market-structure split, comma-separated, at most 8; the claim's own ticker is dropped. READ fills Yahoo's similar stocks as a default |
 | `field_sources` | set by prefill | field -> public source, or `default_assumption:...` for a default; recorded as provenance while the value is unchanged |
 
 Which inputs matter most: the claim gives the ticker, target price and horizon. Reference price, current shares and base metric are facts the page fills from public data. The valuation multiple and the target share count are assumptions the claim usually leaves open, and they drive the result: the required revenue or net income scales with 1 / multiple and with the share count. The defaults are today's multiple ("no re-rating") and the reported share trend; the sensitivity table shows how the requirement moves when the multiple changes.
@@ -158,7 +270,7 @@ Target share count: few people can estimate it directly, so the page asks how th
 
 A year in the claim text that is already past, or that disagrees with the horizon by more than a year, produces a warning.
 
-Rejected: missing core fields, non-numbers, NaN, Infinity, non-positive prices/multiples/shares/horizon, future dates, and a base-metric currency different from the price currency (no FX conversion is applied). Nothing is filled in silently: prefilled values are visible, labelled with their source and confirmed like any other input.
+Rejected: missing core fields, non-numbers, NaN, Infinity, non-positive prices/multiples/shares, a horizon shorter than about one month (0.08 years) or longer than 10 years, a deadline (reference date + horizon) that has already passed, future dates, and a base-metric currency different from the price currency (no FX conversion is applied). Nothing is filled in silently: prefilled values are visible, labelled with their source and confirmed like any other input.
 
 ## Formulas
 
@@ -185,6 +297,13 @@ Acceptance example (synthetic): reference 50, target 100, 5 years, 100,000,000 t
 | Yahoo Finance options `query2.finance.yahoo.com/v7/finance/options` | option chains, implied volatility | free, no key | needs a session cookie and crumb (handled by `YahooAuthedClient`); unofficial |
 | SEC XBRL frames `data.sec.gov/api/xbrl/frames` | revenue / net income of all filers for a calendar year | free, no key | SEC User-Agent rule |
 | SEC Archives Form 4 XML | insider transactions | free, no key | SEC User-Agent rule; at most 40 filings per run |
+| Yahoo Finance chart, one year daily | SPY, QQQ, IWM, ^VIX, ^VIX3M and the peer basket for the market-structure split | free, no key | same unofficial endpoint as the prices |
+| Yahoo Finance `query2.finance.yahoo.com/v6/finance/recommendationsbysymbol` | similar stocks, the default peer basket | free, no key | built from what users view together, so it mixes industry peers and theme stocks |
+| Yahoo Finance `query1.finance.yahoo.com/v1/finance/search` | the 20 latest headlines on the ticker | free, no key | headlines only |
+| Google News RSS `news.google.com/rss/search` | headline searches on the company and each catalyst theme | free, no key | up to 100 items per search; headlines only; GDELT was tested and rate-limits anonymous use |
+| Yahoo Finance `quoteSummary?modules=calendarEvents` | the next earnings date | free, no key | needs the session crumb like the option chains; Yahoo marks estimated dates |
+| SEC Archives filing index and Exhibit 99 | 8-K press release sentences for the catalyst register | free, no key | SEC User-Agent rule; at most 10 filings of the last year per scan |
+| Anthropic API (optional) | the catalyst proposal (two calls) and the narrative (one call) | billed per token | only when the button is pressed; about $0.24 for one RKLB scan |
 | Polymarket `gamma-api.polymarket.com/public-search` | event contracts on the ticker | free, no key | usually weekly or monthly contracts |
 | CNN Fear & Greed `production.dataviz.cnn.io` | market sentiment | free, no key | needs browser headers |
 
@@ -242,7 +361,7 @@ Statuses: `evaluated`, `evaluated_with_provider_errors`, `blocked_invalid_input`
 ## Layout
 
 ```
-app.py                              Streamlit page (console and report)
+app.py                              Streamlit page (three input steps, seven report pages, history, setup)
 src/tickercase/ui/cockpit.py        console look: page CSS and the HTML of each unit
 src/tickercase/ui/kline.py          K-line chart page (iframe)
 static/                             screen fonts (OFL) and textures, served at /app/static
