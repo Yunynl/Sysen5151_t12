@@ -35,6 +35,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
+from . import timing
 from .models import DataMode
 
 SNAPSHOT_SCHEMA = "tickercase.snapshot/1"
@@ -136,6 +137,15 @@ def validate_user_agent(user_agent: Optional[str]) -> Optional[str]:
     return None
 
 
+TEXT_SUFFIXES = (".xml", ".htm", ".html", ".txt")
+TEXT_PREFIXES = ("https://news.google.com/rss/",)
+
+
+def is_text_url(url: str) -> bool:
+    """Responses kept as text rather than parsed as JSON: documents by suffix, RSS feeds by prefix."""
+    return urlparse(url).path.lower().endswith(TEXT_SUFFIXES) or url.startswith(TEXT_PREFIXES)
+
+
 @dataclass
 class LiveHttpClient:
     user_agent: Optional[str]
@@ -174,8 +184,13 @@ class LiveHttpClient:
             if self._last_request is not None:
                 wait = self.min_interval_seconds - (self.monotonic() - self._last_request)
                 if wait > 0:
-                    self.sleep(wait)
+                    with timing.span("C.2.4", "request spacing wait", service=self.service_name):
+                        self.sleep(wait)
             self._last_request = self.monotonic()
+
+    def _pause(self, seconds: float, url: str) -> None:
+        with timing.span("C.2.4", "retry wait", url=url):
+            self.sleep(seconds)
 
     def get_json(self, url: str) -> FetchedJson:
         if self.require_contact_email:
@@ -190,6 +205,7 @@ class LiveHttpClient:
         ttl = self._ttl_for(url)
         cached = self._cache.get(url)
         if cached and ttl > 0 and self.monotonic() - cached[0] < ttl:
+            timing.count("cache_hits")
             return cached[1]
 
         headers = {
@@ -204,12 +220,13 @@ class LiveHttpClient:
             self._throttle()
             self.request_log.append(url)
             try:
-                response = self.transport(url, headers, self.timeout_seconds)
+                with timing.span(timing.external_participant(url), "request", url=url, attempt=attempt + 1):
+                    response = self.transport(url, headers, self.timeout_seconds)
             except (TimeoutError, socket.timeout) as exc:
                 last_error = FetchError("timeout", f"request timed out after {self.timeout_seconds}s: {url}", url=url, data_mode=DataMode.LIVE)
                 last_error.__cause__ = exc
                 if not is_last:
-                    self.sleep(self.backoff_seconds * (2 ** attempt))
+                    self._pause(self.backoff_seconds * (2 ** attempt), url)
                 continue
             except (URLError, OSError) as exc:
                 reason = getattr(exc, "reason", exc)
@@ -219,7 +236,7 @@ class LiveHttpClient:
                     code, msg = "network_error", f"network error for {url}: {reason}"
                 last_error = FetchError(code, msg, url=url, data_mode=DataMode.LIVE)
                 if not is_last:
-                    self.sleep(self.backoff_seconds * (2 ** attempt))
+                    self._pause(self.backoff_seconds * (2 ** attempt), url)
                 continue
 
             status = response.status
@@ -250,12 +267,12 @@ class LiveHttpClient:
                 wait = retry_after if retry_after is not None else self.backoff_seconds * (2 ** attempt)
                 if is_last or wait > self.max_retry_after_seconds:
                     raise last_error
-                self.sleep(wait)
+                self._pause(wait, url)
                 continue
             if 500 <= status < 600:
                 last_error = FetchError("server_error", f"{status} server error from {url}", url=url, http_status=status, data_mode=DataMode.LIVE)
                 if not is_last:
-                    self.sleep(self.backoff_seconds * (2 ** attempt))
+                    self._pause(self.backoff_seconds * (2 ** attempt), url)
                 continue
             raise FetchError("http_error", f"unexpected HTTP {status} from {url}", url=url, http_status=status, data_mode=DataMode.LIVE)
 
@@ -270,8 +287,8 @@ class LiveHttpClient:
                 body = gzip.decompress(body)
             except OSError as exc:
                 raise FetchError("invalid_payload", f"could not decompress gzip body from {url}", url=url, data_mode=DataMode.LIVE) from exc
-        if urlparse(url).path.lower().endswith(".xml"):
-            return body.decode("utf-8", "replace")  # SEC ownership documents (Form 4) are XML; kept as text
+        if is_text_url(url):
+            return body.decode("utf-8", "replace")  # Form 4 XML, 8-K exhibits (HTML) and news RSS are kept as text
         try:
             return json.loads(body.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -367,6 +384,10 @@ class ReplayHttpClient:
         self.data_mode = DataMode.REPLAY
 
     def get_json(self, url: str) -> FetchedJson:
+        with timing.span("C.2.4", "snapshot read", url=url):
+            return self._read(url)
+
+    def _read(self, url: str) -> FetchedJson:
         path = self.snapshot_dir / snapshot_filename(url)
         if not path.is_file():
             raise FetchError(

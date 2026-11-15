@@ -37,6 +37,9 @@ NOT_TICKERS = {
     "THE", "AND", "OR", "TO", "BY", "IN", "AT", "OF", "ON", "IT", "IS", "BE", "I", "A", "K", "M", "B", "T", "X", "HK", "HKD",
     "CNY", "RMB", "SEC", "NYSE", "NASDAQ", "IMO", "LOL", "ATH",
 }
+# English words that are also tickers (BE Bloom Energy, IT Gartner, ON onsemi); written in capitals inside a
+# normal sentence and listed by SEC, they are read as the ticker when nothing better is found
+COMMON_WORDS = {"THE", "AND", "OR", "TO", "BY", "IN", "AT", "OF", "ON", "IT", "IS", "BE"}
 CN_DIGITS = {"零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
 CN_UNITS = {"十": 10, "百": 100, "千": 1000, "万": 10000}
 EN_NUMBERS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
@@ -46,6 +49,11 @@ NUM = r"\d[\d,]*(?:\.\d+)?"
 CN_NUM = r"[零〇一二两三四五六七八九十百千万]+"
 TICKER_RE = re.compile(r"(?<![A-Za-z])\$?([A-Z]{1,5}(?:[.\-][A-Z])?)(?![A-Za-z])")
 YEAR_RE = re.compile(r"(?<!\d)((?:19|20|21)\d{2})(?!\d)\s*(?:年)?\s*(底|末|年底|年末|上半年|年中|初|年初)?")
+# a year-like number right after a price verb or a dollar sign, or followed by a currency word, is a price: 涨到 2000, $1950
+PRICE_BEFORE_RE = re.compile(r"(?:涨到|涨至|涨上|升到|升至|冲到|冲上|冲破|突破|达到|站上|站稳|收在|收于|跌到|跌至|跌破|回到|目标价?|"
+                             r"reach(?:es)?|hits?|above|below|(?:rise|rises|climb|climbs|go|goes|get|gets|trade|trades)\s+to|\$)\s*$",
+                             re.IGNORECASE)
+PRICE_AFTER_RE = re.compile(r"\s*(?:美元|美金|元|块|刀|dollars?|usd)", re.IGNORECASE)
 
 
 def cn_to_number(text: str) -> Optional[Decimal]:
@@ -92,9 +100,22 @@ class _Found:
     extra: dict = field(default_factory=dict)
 
 
+def _is_price(text: str, m: re.Match) -> bool:
+    if "年" in m.group(0) or m.group(2):
+        return False
+    return bool(PRICE_BEFORE_RE.search(text[:m.start()]) or PRICE_AFTER_RE.match(text, m.end(1)))
+
+
+def _years(text: str) -> list[re.Match]:
+    """Year numbers in the text, leaving out year-like prices (涨到 2000)."""
+    return [m for m in YEAR_RE.finditer(text) if not _is_price(text, m)]
+
+
 def _strip_years(text: str) -> str:
     """Blank out year numbers so they are not read as prices."""
-    return YEAR_RE.sub(lambda m: " " * len(m.group(0)), text)
+    for m in _years(text):
+        text = text[:m.start()] + " " * (m.end() - m.start()) + text[m.end():]
+    return text
 
 
 def find_ticker(text: str, is_known: Optional[Callable[[str], bool]]) -> Optional[_Found]:
@@ -103,6 +124,8 @@ def find_ticker(text: str, is_known: Optional[Callable[[str], bool]]) -> Optiona
         sym = m.group(1).upper()
         cashtag = m.group(0).startswith("$")
         if sym in NOT_TICKERS and not cashtag:
+            if sym in COMMON_WORDS and is_known and is_known(sym) and re.search(r"[a-z]", text):
+                candidates.append(_Found(sym, m.group(0), m.start(), priority=0, extra={"common_word": True}))
             continue
         if len(sym) == 1 and not cashtag:
             continue
@@ -136,7 +159,30 @@ TARGET_PATTERNS = [
     (re.compile(rf"(?:reach(?:es|ing)?|hit(?:s|ting)?|to|at|above|target(?: price)?(?: of)?|be worth|trade at|worth)\s+\$?\s*({NUM})\s*([kK])?(?![\d])", re.I), 3),
     # 1000一股 / 1000 每股 / 1000 per share
     (re.compile(rf"({NUM}|{CN_NUM})\s*([kK千万])?\s*(?:一股|每股|/股|per share|a share)", re.I), 4),
+    # a bare number, last resort: "明年10万", "AAPL 300" (not a time, a percentage, a multiple or part of a date)
+    (re.compile(rf"(?<![A-Za-z0-9./$])({NUM})\s*([kK千万])?(?!\s*(?:年|个?月|天|日|号|周|%|倍|[xX](?![A-Za-z])|/|\d|\.\d|years?|yrs?|months?|weeks?|days?))", re.I), 1),
 ]
+# a valuation written into the claim: "按 40 倍市盈率", "40倍PE", "P/S 20", "at 30 times earnings"
+VALUATION_PATTERNS = [
+    re.compile(rf"(?:按|以|用)?\s*({NUM}|{CN_NUM})\s*(?:倍|[xX]|times)\s*(?:的)?\s*(市盈率|市销率|P/?E|P/?S|earnings|sales)", re.I),
+    re.compile(rf"(?:按|以|用)?\s*(市盈率|市销率|P/?E|P/?S)\s*(?:为|是|按|of|at|=|:|：)?\s*({NUM}|{CN_NUM})\s*(?:倍|[xX]|times)?", re.I),
+]
+_EARNINGS = re.compile(r"市盈率|P/?E|earnings", re.I)
+
+
+def find_valuation(text: str) -> Optional[_Found]:
+    """("price_to_earnings" | "price_to_sales", multiple) and the words it came from."""
+    for k, pattern in enumerate(VALUATION_PATTERNS):
+        m = pattern.search(text)
+        if not m:
+            continue
+        number, kind = (m.group(1), m.group(2)) if k == 0 else (m.group(2), m.group(1))
+        value = parse_number(number)
+        if value is None or value <= 0:
+            continue
+        method = "price_to_earnings" if _EARNINGS.fullmatch(kind.replace(" ", "")) else "price_to_sales"
+        return _Found((method, value), m.group(0).strip(), m.start(), extra={"end": m.end()})
+    return None
 MULTIPLE_PATTERNS = [
     (re.compile(r"翻倍|翻一倍|double[sd]?|doubling", re.I), lambda m: Decimal(2)),
     (re.compile(r"翻(\d+|[一二两三四五六七八九十]+)番"), lambda m: Decimal(2) ** int(parse_number(m.group(1)))),
@@ -144,6 +190,8 @@ MULTIPLE_PATTERNS = [
     (re.compile(r"(\d+(?:\.\d+)?)\s*[xX](?![A-Za-z])"), lambda m: parse_number(m.group(1))),
     (re.compile(r"ten[- ]?bagger|十倍股", re.I), lambda m: Decimal(10)),
     (re.compile(r"(?:涨|上涨|rise|gain|up)\s*(\d+(?:\.\d+)?)\s*%", re.I), lambda m: 1 + parse_number(m.group(1)) / 100),
+    (re.compile(r"(?:涨|上涨|升)\s*一半"), lambda m: Decimal("1.5")),  # "涨一半" = up 50%
+    (re.compile(r"(?:涨|上涨|升)\s*(\d|[一二两三四五六七八九])\s*成"), lambda m: 1 + parse_number(m.group(1)) / 10),  # "涨三成" = up 30%
 ]
 
 
@@ -202,11 +250,16 @@ def find_horizon(text: str, today: date) -> Optional[_Found]:
     lowered = text.lower()
     # durations: 5年后 / 五年内 / in 5 years / within 18 months / 一年半
     dur = re.search(rf"({NUM}|{CN_NUM})\s*(?:个)?\s*(年|月)\s*(半)?\s*(?:后|内|以后|之后|之内|以内)?", text)
-    m_en = re.search(r"(?:in|within|over|after|next)\s+(\d+(?:\.\d+)?|" + "|".join(EN_NUMBERS) + r")\s+(years?|yrs?|months?)", lowered)
+    # days and weeks: 999天后 / 两周内 / 3个星期; not 有一天 (someday) or 十周年 (anniversary)
+    short = re.search(rf"(?<![有某哪])({NUM}|{CN_NUM})\s*(?:个)?\s*(天|周(?!年)|星期|礼拜)\s*(?:后|内|以后|之后|之内|以内)?", text)
+    m_en = re.search(r"(?:in|within|over|after|next)\s+(\d+(?:\.\d+)?|" + "|".join(EN_NUMBERS) + r")\s+(years?|yrs?|months?|weeks?|days?)", lowered)
     if m_en:
-        raw = m_en.group(1)
+        raw, unit = m_en.group(1), m_en.group(2)
         n = Decimal(str(EN_NUMBERS[raw])) if raw in EN_NUMBERS else Decimal(raw)
-        years = n / 12 if m_en.group(2).startswith("month") else n
+        if unit.startswith(("week", "day")):
+            years = n * (7 if unit.startswith("week") else 1) / Decimal("365.25")
+            return _Found(years, text[m_en.start(): m_en.end()], m_en.start(), extra={"kind": "duration", "fine": True})
+        years = n / 12 if unit.startswith("month") else n
         return _Found(years, text[m_en.start(): m_en.end()], m_en.start(), extra={"kind": "duration"})
     if dur and not YEAR_RE.match(dur.group(0).strip()):
         n = parse_number(dur.group(1))
@@ -215,12 +268,26 @@ def find_horizon(text: str, today: date) -> Optional[_Found]:
             if dur.group(3):
                 years += Decimal("0.5")
             return _Found(years, dur.group(0).strip(), dur.start(), extra={"kind": "duration"})
+    if short:
+        n = parse_number(short.group(1))
+        if n is not None and n > 0:
+            years = n * (1 if short.group(2) == "天" else 7) / Decimal("365.25")
+            return _Found(years, short.group(0).strip(), short.start(), extra={"kind": "duration", "fine": True})
     if "半年" in text:
         i = text.index("半年")
         return _Found(Decimal("0.5"), "半年", i, extra={"kind": "duration"})
+    # next month / next week / next quarter, read as one month, one week, three months from the reference date
+    for words, years, fine in ((("下个月", "下月", "next month"), Decimal(1) / 12, False),
+                               (("下个季度", "下季度", "next quarter"), Decimal("0.25"), False),
+                               (("下个星期", "下星期", "下个礼拜", "下礼拜", "下周", "next week"), Decimal(7) / Decimal("365.25"), True)):
+        for w in words:
+            idx = lowered.find(w)
+            if idx >= 0:
+                return _Found(years, text[idx: idx + len(w)], idx, extra={"kind": "duration", "fine": fine} if fine else {"kind": "duration"})
     # calendar year: 2030年 / by 2030 / 2027年底
-    m = YEAR_RE.search(text)
-    if m:
+    years = _years(text)
+    if years:
+        m = years[0]
         year = int(m.group(1))
         end = _year_end(year, m.group(2))
         return _Found(None, m.group(0).strip(), m.start(), extra={"kind": "date", "date": end})
@@ -242,10 +309,22 @@ def extract_claim(text: str, *, today: date, is_known_ticker: Optional[Callable[
     t = find_ticker(text, is_known_ticker)
     if t:
         out.ticker, out.ticker_text = t.value, t.text
+        if t.extra.get("common_word"):
+            out.notes_en.append(f"“{t.value}” is also an English word; it is read as the SEC-listed ticker {t.value}; change it if you meant something else")
+            out.notes_zh.append(f"「{t.value}」也是英文常用词，这里按 SEC 列出的股票代码 {t.value} 读；不是的话请修改")
     else:
-        out.notes_en.append("no ticker or known company name found; enter the ticker")
-        out.notes_zh.append("没有识别到股票代码或常见公司名，请手动填写代码")
-    tgt = find_target(text)
+        out.notes_en.append("no US-listed stock found in the sentence (tickers such as NVDA and names such as Tesla are read; "
+                            "crypto and shares listed outside the US are not covered); you can also enter the ticker on ② Check")
+        out.notes_zh.append("句子里没有识别到美国上市的股票（能读代码如 NVDA，或公司名如特斯拉；比特币、A 股、港股不在范围内）；"
+                            "也可以在 ② 核对页手动填写代码")
+    val = find_valuation(text)
+    target_text = text
+    if val is not None:
+        out.valuation_method, out.valuation_multiple = val.value
+        out.valuation_text = val.text
+        # the multiple's number must not be read as a target or as "rises 40 times"
+        target_text = text[:val.start] + " " * (val.extra["end"] - val.start) + text[val.extra["end"]:]
+    tgt = find_target(target_text)
     if tgt and tgt.value is not None:
         out.target_price, out.target_text = tgt.value, tgt.text
     elif tgt:
@@ -264,9 +343,11 @@ def extract_claim(text: str, *, today: date, is_known_ticker: Optional[Callable[
                 out.notes_en.append(f"the date in the claim ({end}) is already past; TickerCase checks claims about the future")
                 out.notes_zh.append(f"观点中的时间（{end}）已经过去；TickerCase 用来核验关于未来的观点")
             else:
-                out.horizon_years = years.quantize(Decimal("0.01"))
+                out.horizon_years = years.quantize(Decimal("0.0001"))  # "明年" ends on 31 December, not two days before
         else:
-            out.horizon_years = Decimal(hz.value).quantize(Decimal("0.01"))
+            # whole years stay whole; months and days keep four decimals so the deadline lands on the right day
+            value = Decimal(hz.value)
+            out.horizon_years = value.quantize(Decimal("0.01")) if value == value.to_integral_value() else value.quantize(Decimal("0.0001"))
     else:
         out.notes_en.append("no time frame found; enter the horizon in years")
         out.notes_zh.append("没有识别到时间范围，请手动填写年数")
