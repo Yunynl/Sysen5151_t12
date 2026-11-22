@@ -35,11 +35,13 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
+from . import timing
 from .models import DataMode
 
 SNAPSHOT_SCHEMA = "tickercase.snapshot/1"
 ORIGIN_LIVE = "live_recorded"
 ORIGIN_SYNTHETIC = "synthetic_fixture"
+ORIGIN_LAST_GOOD = "last_good_fallback"   # a live response kept from an earlier request, served because the source did not answer
 
 
 def utcnow() -> datetime:
@@ -136,6 +138,15 @@ def validate_user_agent(user_agent: Optional[str]) -> Optional[str]:
     return None
 
 
+TEXT_SUFFIXES = (".xml", ".htm", ".html", ".txt")
+TEXT_PREFIXES = ("https://news.google.com/rss/",)
+
+
+def is_text_url(url: str) -> bool:
+    """Responses kept as text rather than parsed as JSON: documents by suffix, RSS feeds by prefix."""
+    return urlparse(url).path.lower().endswith(TEXT_SUFFIXES) or url.startswith(TEXT_PREFIXES)
+
+
 @dataclass
 class LiveHttpClient:
     user_agent: Optional[str]
@@ -174,8 +185,13 @@ class LiveHttpClient:
             if self._last_request is not None:
                 wait = self.min_interval_seconds - (self.monotonic() - self._last_request)
                 if wait > 0:
-                    self.sleep(wait)
+                    with timing.span("C.2.4", "request spacing wait", service=self.service_name):
+                        self.sleep(wait)
             self._last_request = self.monotonic()
+
+    def _pause(self, seconds: float, url: str) -> None:
+        with timing.span("C.2.4", "retry wait", url=url):
+            self.sleep(seconds)
 
     def get_json(self, url: str) -> FetchedJson:
         if self.require_contact_email:
@@ -190,6 +206,7 @@ class LiveHttpClient:
         ttl = self._ttl_for(url)
         cached = self._cache.get(url)
         if cached and ttl > 0 and self.monotonic() - cached[0] < ttl:
+            timing.count("cache_hits")
             return cached[1]
 
         headers = {
@@ -204,12 +221,13 @@ class LiveHttpClient:
             self._throttle()
             self.request_log.append(url)
             try:
-                response = self.transport(url, headers, self.timeout_seconds)
+                with timing.span(timing.external_participant(url), "request", url=url, attempt=attempt + 1):
+                    response = self.transport(url, headers, self.timeout_seconds)
             except (TimeoutError, socket.timeout) as exc:
                 last_error = FetchError("timeout", f"request timed out after {self.timeout_seconds}s: {url}", url=url, data_mode=DataMode.LIVE)
                 last_error.__cause__ = exc
                 if not is_last:
-                    self.sleep(self.backoff_seconds * (2 ** attempt))
+                    self._pause(self.backoff_seconds * (2 ** attempt), url)
                 continue
             except (URLError, OSError) as exc:
                 reason = getattr(exc, "reason", exc)
@@ -219,7 +237,7 @@ class LiveHttpClient:
                     code, msg = "network_error", f"network error for {url}: {reason}"
                 last_error = FetchError(code, msg, url=url, data_mode=DataMode.LIVE)
                 if not is_last:
-                    self.sleep(self.backoff_seconds * (2 ** attempt))
+                    self._pause(self.backoff_seconds * (2 ** attempt), url)
                 continue
 
             status = response.status
@@ -250,12 +268,12 @@ class LiveHttpClient:
                 wait = retry_after if retry_after is not None else self.backoff_seconds * (2 ** attempt)
                 if is_last or wait > self.max_retry_after_seconds:
                     raise last_error
-                self.sleep(wait)
+                self._pause(wait, url)
                 continue
             if 500 <= status < 600:
                 last_error = FetchError("server_error", f"{status} server error from {url}", url=url, http_status=status, data_mode=DataMode.LIVE)
                 if not is_last:
-                    self.sleep(self.backoff_seconds * (2 ** attempt))
+                    self._pause(self.backoff_seconds * (2 ** attempt), url)
                 continue
             raise FetchError("http_error", f"unexpected HTTP {status} from {url}", url=url, http_status=status, data_mode=DataMode.LIVE)
 
@@ -270,8 +288,8 @@ class LiveHttpClient:
                 body = gzip.decompress(body)
             except OSError as exc:
                 raise FetchError("invalid_payload", f"could not decompress gzip body from {url}", url=url, data_mode=DataMode.LIVE) from exc
-        if urlparse(url).path.lower().endswith(".xml"):
-            return body.decode("utf-8", "replace")  # SEC ownership documents (Form 4) are XML; kept as text
+        if is_text_url(url):
+            return body.decode("utf-8", "replace")  # Form 4 XML, 8-K exhibits (HTML) and news RSS are kept as text
         try:
             return json.loads(body.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -367,6 +385,10 @@ class ReplayHttpClient:
         self.data_mode = DataMode.REPLAY
 
     def get_json(self, url: str) -> FetchedJson:
+        with timing.span("C.2.4", "snapshot read", url=url):
+            return self._read(url)
+
+    def _read(self, url: str) -> FetchedJson:
         path = self.snapshot_dir / snapshot_filename(url)
         if not path.is_file():
             raise FetchError(
@@ -410,3 +432,71 @@ class FakeHttpClient:
         if isinstance(value, FetchError):
             raise value
         return FetchedJson(url=url, payload=value, retrieved_at=self.now(), data_mode=self.data_mode)
+
+
+# ---------------------------------------------------------------- fallback for a source that does not answer (R.2)
+
+# failures that say the request itself is wrong, not that the source is away: a stored copy must not hide them
+NOT_AN_OUTAGE = ("missing_user_agent", "invalid_url")
+
+
+class LastGoodHttpClient:
+    """A live client that keeps the last good answer to every URL and serves it, dated, when the source does not answer.
+
+    The fallback for risk R.2 of docs/risks.md (the market data source changes, slows or blocks). It contains the
+    failure, it does not prevent it: the outage still happens and the reader is told.
+
+    - A good answer is stored, so the next outage has something to fall back on. A failed write is ignored: the answer
+      in hand is still returned.
+    - When the live request fails, the stored answer to the same URL is returned with ``source_captured_at`` set to the
+      time it was fetched and ``snapshot_origin`` set to ``ORIGIN_LAST_GOOD``, and the use is added to ``used``.
+    - The guardrail of the fallback: a stored answer older than ``max_age_seconds`` is refused and the failure is raised
+      as before, with the age said in the message. A price from last month must never pass for today's.
+    - A failure of the request itself (no User-Agent, a URL that is not https) is raised as it is.
+    """
+
+    def __init__(self, live: JsonFetcher, directory: Union[str, Path], *, max_age_seconds: float, now: Callable[[], datetime] = utcnow):
+        self.live = live
+        self.directory = Path(directory)
+        self.max_age_seconds = max_age_seconds
+        self.now = now
+        self.used: list[tuple[str, datetime]] = []
+        self._reader = ReplayHttpClient(self.directory, now=now)
+
+    def get_json(self, url: str) -> FetchedJson:
+        try:
+            fetched = self.live.get_json(url)
+        except FetchError as exc:
+            if exc.code in NOT_AN_OUTAGE:
+                raise
+            stored = self._stored(url)
+            if stored is None:
+                raise
+            age = (self.now() - stored.source_captured_at).total_seconds()
+            if age > self.max_age_seconds or age < -300:
+                raise FetchError(
+                    exc.code, f"{exc.message}; the stored answer of {stored.source_captured_at:%Y-%m-%d %H:%M} UTC is "
+                              f"{age / 3600:.0f} hours old, over the limit of {self.max_age_seconds / 3600:.0f}, and was not used",
+                    url=url, http_status=exc.http_status, retry_after_seconds=exc.retry_after_seconds, data_mode=exc.data_mode) from exc
+            self.used.append((url, stored.source_captured_at))
+            timing.count("fallback_answers")
+            return stored
+        try:
+            write_snapshot(self.directory, url, fetched.payload, captured_at=fetched.retrieved_at)
+        except (OSError, TypeError, ValueError):
+            pass
+        return fetched
+
+    def _stored(self, url: str) -> Optional[FetchedJson]:
+        try:
+            stored = self._reader._read(url)
+        except FetchError:
+            return None
+        if stored.source_captured_at is None:
+            return None
+        captured = stored.source_captured_at if stored.source_captured_at.tzinfo else stored.source_captured_at.replace(tzinfo=timezone.utc)
+        return FetchedJson(url=url, payload=stored.payload, retrieved_at=self.now(), data_mode=DataMode.LIVE,
+                           source_captured_at=captured, snapshot_origin=ORIGIN_LAST_GOOD)
+
+    def __getattr__(self, name: str):
+        return getattr(self.live, name)

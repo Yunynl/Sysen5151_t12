@@ -17,6 +17,9 @@ from datetime import date, datetime, timezone
 from decimal import ROUND_HALF_EVEN, Context, Decimal, InvalidOperation, localcontext
 from typing import Any, Callable, Optional
 
+from .calculations import deadline_from
+from .extract import _years as claim_years
+from .fmt import pct
 from .models import (
     ClaimDraft,
     Confirmation,
@@ -28,7 +31,6 @@ from .models import (
 )
 
 TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")
-YEAR_RE = re.compile(r"(?<!\d)(19\d{2}|20\d{2}|21\d{2})(?!\d)")
 CURRENCY_RE = re.compile(r"^[A-Z]{3}$")
 
 CORE_FIELDS: dict[str, str] = {
@@ -54,6 +56,13 @@ SHARE_MODES = ("trend", "flat", "rate", "absolute")
 PRICE_CONDITIONS = ("end", "touch")
 SHARE_RATE_MIN, SHARE_RATE_MAX = Decimal("-0.5"), Decimal("1")
 SHARE_RATE_WARN_LOW, SHARE_RATE_WARN_HIGH = Decimal("-0.10"), Decimal("0.20")
+# Below about a month the monthly price history (M4) and yearly base rates (M3) do not apply;
+# beyond ten years the claim outruns the base-rate window and every listed option expiry.
+HORIZON_MIN_YEARS, HORIZON_MAX_YEARS = Decimal("0.08"), Decimal("10")
+MAX_PEERS = 8
+PEER_SPLIT_RE = re.compile(r"[\s,，、;；]+")
+# fields added after v0.10 enter the fingerprint only when set, so earlier confirmations keep their fingerprint
+LATE_FIELDS = ("peer_tickers",)
 
 
 def _clean_text(value: Optional[str]) -> Optional[str]:
@@ -76,8 +85,30 @@ def normalized_draft(draft: ClaimDraft) -> dict[str, Optional[str]]:
             text = text.upper()
         if text is not None and name in ("valuation_method", "price_condition"):
             text = text.lower()
+        if name == "peer_tickers" and text is not None:
+            text = ",".join(x.upper() for x in PEER_SPLIT_RE.split(text) if x) or None
+        if name in LATE_FIELDS and text is None:
+            continue
         out[name] = text
     return out
+
+
+def parse_peers(text: Optional[str], ticker: Optional[str], issues: list[ValidationIssue]) -> list[str]:
+    """'asts, IONQ，ionq' -> ['ASTS', 'IONQ']: upper case, de-duplicated, the claim's own ticker left out."""
+    peers: list[str] = []
+    for raw in PEER_SPLIT_RE.split(text or ""):
+        sym = raw.strip().upper().lstrip("$")
+        if not sym:
+            continue
+        if not TICKER_RE.match(sym):
+            issues.append(ValidationIssue(field="peer_tickers", code="invalid_ticker", message=f"peer_tickers: '{raw}' is not a ticker"))
+            continue
+        if sym != ticker and sym not in peers:
+            peers.append(sym)
+    if len(peers) > MAX_PEERS:
+        issues.append(ValidationIssue(field="peer_tickers", code="out_of_range", message=f"peer_tickers: at most {MAX_PEERS} similar stocks"))
+        peers = peers[:MAX_PEERS]
+    return peers
 
 
 def fingerprint(draft: ClaimDraft) -> str:
@@ -157,6 +188,15 @@ def validate_draft(draft: ClaimDraft, *, today: Optional[date] = None) -> Valida
     numbers: dict[str, Optional[Decimal]] = {}
     for name in POSITIVE_NUMBERS:
         numbers[name] = parse_decimal(name, norm[name], issues, positive=True)
+    horizon = numbers["horizon_years"]
+    if horizon is not None and not HORIZON_MIN_YEARS <= horizon <= HORIZON_MAX_YEARS:
+        short = horizon < HORIZON_MIN_YEARS
+        days = round(horizon * Decimal("365.25")) if short else 0
+        issues.append(ValidationIssue(
+            field="horizon_years", code="horizon_too_short" if short else "horizon_too_long",
+            message=(f"{horizon:f} years is about {days} day{'' if days == 1 else 's'}; the shortest horizon is about one month ({HORIZON_MIN_YEARS} years)"
+                     if short else f"{horizon:f} years is beyond the longest horizon of {HORIZON_MAX_YEARS} years")))
+        numbers["horizon_years"] = None
     numbers["current_shares"] = parse_decimal("current_shares", norm["current_shares"], issues, positive=True)
     # base metric may be zero or negative (e.g. a net loss); growth rate handles that case
     numbers["base_annual_metric"] = parse_decimal("base_annual_metric", norm["base_annual_metric"], issues, positive=False)
@@ -175,6 +215,7 @@ def validate_draft(draft: ClaimDraft, *, today: Optional[date] = None) -> Valida
         issues.append(ValidationIssue(field="price_condition", code="unsupported_mode", message=f"price_condition must be one of {PRICE_CONDITIONS}"))
         condition = "end"
     target_shares, shares_derived = _target_shares(numbers, share_rate, share_mode, norm, missing, warnings)
+    peers = parse_peers(norm.get("peer_tickers"), ticker, issues)
 
     drift = parse_decimal("probability_drift", norm["probability_drift"], issues, positive=False)
     prob_vol = parse_decimal("probability_volatility", norm["probability_volatility"], issues, positive=True)
@@ -195,6 +236,11 @@ def validate_draft(draft: ClaimDraft, *, today: Optional[date] = None) -> Valida
 
     ref_date = _parse_date("reference_price_date", norm["reference_price_date"], issues, today)
     since = _parse_date("filings_since", norm["filings_since"], issues, today)
+    if ref_date is not None and numbers["horizon_years"] is not None:
+        deadline = deadline_from(ref_date, numbers["horizon_years"])
+        if deadline <= today:
+            issues.append(ValidationIssue(field="horizon_years", code="deadline_passed",
+                                          message=f"the reference date {ref_date} plus the horizon gives a deadline of {deadline}, which is not after today ({today})"))
 
     base_currency = norm["base_metric_currency"]
     if base_currency is not None and not CURRENCY_RE.match(base_currency):
@@ -244,6 +290,10 @@ def validate_draft(draft: ClaimDraft, *, today: Optional[date] = None) -> Valida
         warnings.append(("SEC XBRL amounts are compared in USD only; with another currency the evidence checks report missing data",
                          "SEC XBRL 金额只按美元比较；其他币种下证据检查会显示缺失"))
     warnings.extend(_claim_year_warnings(norm["claim_text"], numbers.get("horizon_years"), today))
+    target, ref = numbers.get("target_price"), numbers.get("reference_price")
+    if target is not None and ref is not None and target <= ref:
+        warnings.append((f"the target {target} is not above the reference price {ref}: the claim is already met today, or it is about a fall; check the target",
+                         f"目标价 {target} 不高于参考价 {ref}：观点今天已经成立，或者其实是看跌；请检查目标价"))
 
     fp = fingerprint(draft)
     blocking_missing = any(m.blocking for m in missing)
@@ -273,6 +323,7 @@ def validate_draft(draft: ClaimDraft, *, today: Optional[date] = None) -> Valida
         share_change_mode=share_mode,
         target_shares_derived=shares_derived,
         price_condition=condition,
+        peer_tickers=peers,
         probability_volatility=prob_vol,
         field_sources={k: v.strip() for k, v in sources.items() if isinstance(v, str) and v.strip() and norm.get(k) is not None},
     )
@@ -308,8 +359,8 @@ def _target_shares(numbers, rate, mode, norm, missing, warnings) -> tuple[Option
         return None, False
     if rate is not None and not SHARE_RATE_WARN_LOW <= rate <= SHARE_RATE_WARN_HIGH:
         warnings.append((
-            f"the share count changes {rate * 100:.1f}% a year to reach {target:,.0f} shares; check that the share inputs belong to this company",
-            f"股份数每年变化 {rate * 100:.1f}%，才能到 {target:,.0f} 股；请确认股份数输入属于这家公司",
+            f"the share count changes {pct(rate)} a year to reach {target:,.0f} shares; check that the share inputs belong to this company",
+            f"股份数每年变化 {pct(rate)}，才能到 {target:,.0f} 股；请确认股份数输入属于这家公司",
         ))
     return target, derived
 
@@ -318,7 +369,7 @@ def _claim_year_warnings(text: Optional[str], horizon: Optional[Decimal], today:
     """Flag a year in the claim text that is already past or does not match the horizon."""
     if not text:
         return []
-    years = [int(y) for y in YEAR_RE.findall(text)]
+    years = [int(m.group(1)) for m in claim_years(text)]
     if not years:
         return []
     year = max(years)

@@ -73,6 +73,8 @@ class ClaimDraft(BaseModel):
     probability_volatility: RawNumber = None
     # what counts as the claim coming true: "end" = at or above the target on the date, "touch" = reaches it at any time before
     price_condition: Optional[str] = None
+    # similar stocks whose average move separates a sector move from the stock's own (v0.11), e.g. "ASTS, IONQ"
+    peer_tickers: Optional[str] = None
     # field name -> public source the current value was filled from (set by the page's prefill step)
     field_sources: Optional[dict[str, str]] = None
 
@@ -146,6 +148,7 @@ class ValidatedClaim(BaseModel):
     share_change_mode: Optional[str] = None
     target_shares_derived: bool = False  # True when target_assumed_shares = current_shares x (1 + rate) ** horizon
     price_condition: Literal["end", "touch"] = "end"
+    peer_tickers: list[str] = Field(default_factory=list)  # similar stocks for the market-structure split (v0.11)
     field_sources: dict[str, str] = Field(default_factory=dict)
 
 
@@ -196,6 +199,7 @@ class FilingRecord(BaseModel):
     report_date: Optional[date] = None
     primary_document: Optional[str] = None
     primary_document_description: Optional[str] = None
+    items: Optional[str] = None  # 8-K item numbers as SEC lists them, e.g. "7.01,8.01,9.01"
     document_url: Optional[str] = None
     filing_index_url: str
     source_response_url: str
@@ -251,6 +255,11 @@ class ReportedFacts(BaseModel):
     revenue: list[MetricPoint] = Field(default_factory=list)
     net_income: list[MetricPoint] = Field(default_factory=list)
     shares_outstanding: list[MetricPoint] = Field(default_factory=list)
+    # since v0.23.0, for the question "how much of what it earns is left for the owners"; empty in cases stored before
+    operating_cash_flow: list[MetricPoint] = Field(default_factory=list)
+    capital_expenditure: list[MetricPoint] = Field(default_factory=list)
+    research_development: list[MetricPoint] = Field(default_factory=list)
+    share_based_compensation: list[MetricPoint] = Field(default_factory=list)
     source_url: str
     retrieved_at: datetime
     source_captured_at: Optional[datetime] = None
@@ -418,6 +427,7 @@ class Sensitivity(BaseModel):
     assumed_multiple: str
     assumed_horizon: str
     reported_cagr: Optional[str] = None
+    base_offset_years: Optional[str] = None  # columns count years from today; growth runs this much longer, from the base period end (v0.13.2)
 
 
 class ClaimExtraction(BaseModel):
@@ -435,6 +445,11 @@ class ClaimExtraction(BaseModel):
     currency: Optional[str] = None
     condition: Optional[Literal["end", "touch"]] = None  # "冲到 / 触及 / within 3 years" -> touch; "3 年后 / by 2030" -> end
     condition_text: Optional[str] = None
+    direction: Optional[Literal["down"]] = None  # "跌到 200", "falls to 200": a claim about a fall, which TickerCase does not check
+    direction_text: Optional[str] = None
+    valuation_method: Optional[Literal["price_to_sales", "price_to_earnings"]] = None  # "按 40 倍市盈率" (v0.13.2)
+    valuation_multiple: Optional[DecimalStr] = None
+    valuation_text: Optional[str] = None
     notes_en: list[str] = Field(default_factory=list)
     notes_zh: list[str] = Field(default_factory=list)
 
@@ -477,8 +492,9 @@ class PlainReport(BaseModel):
     headline: Text
     verdict_meaning: Text
     layers: list[ReportLayer] = Field(default_factory=list)
-    agreements: list[Text] = Field(default_factory=list)
+    agreements: list[Text] = Field(default_factory=list)  # groups of checks that point the same way (for or against)
     divergences: list[Text] = Field(default_factory=list)
+    headwinds: list[Text] = Field(default_factory=list)  # market signals against the claim, e.g. insiders only selling (v0.13.1)
     time_view: list[ReportRow] = Field(default_factory=list)
     scenarios: list[ScenarioRow] = Field(default_factory=list)
     scenario_note: Optional[Text] = None
@@ -552,6 +568,9 @@ class BaseRate(BaseModel):
     source_urls: list[str] = Field(default_factory=list)
     data_mode: DataMode
     note: str = "Survivors only: companies that reported in both years. Acquired or delisted companies are missing, which makes the rate optimistic."
+    band_widened: bool = False  # fewer than 30 companies in 0.5x-2x, so 0.25x-4x was used
+    dropped_mis_scaled: int = 0  # companies left out because their two revenue concepts disagree by more than 100x
+    dropped_funds: int = 0  # filers left out because they are funds or commodity trusts (an ETF's "revenue" is not a business)
 
 
 class PriceBaseRate(_Sourced):
@@ -567,6 +586,10 @@ class PriceBaseRate(_Sourced):
     best_return: Optional[DecimalStr] = None
     history_start: date
     touch_hits: Optional[int] = None  # windows whose highest month-end close reached the target
+    # since v0.23.0, for the three outcomes: windows that ended below their start, and those of them in which no
+    # month-end close reached the target either
+    down_windows: Optional[int] = None
+    down_untouched: Optional[int] = None
 
 
 class BenchmarkReturn(BaseModel):
@@ -613,6 +636,10 @@ class InsiderSummary(BaseModel):
     net_open_market_value: DecimalStr = Decimal(0)
     transactions: list[InsiderTransaction] = Field(default_factory=list)
     data_mode: DataMode
+    # provenance of the filing list the Form 4 documents were taken from (SR.1.2.1); each transaction carries its own URL
+    source_url: Optional[str] = None
+    retrieved_at: Optional[datetime] = None
+    source_captured_at: Optional[datetime] = None
 
 
 class PredictionMarket(BaseModel):
@@ -657,6 +684,21 @@ class LadderRow(BaseModel):
     model_touch: Optional[float] = None
 
 
+class EventTiltPart(BaseModel):
+    """One scored event of the register and the points it adds to the main number (v0.21.0)."""
+
+    catalyst_id: str
+    name: "Text"
+    day: date
+    change: "Text"
+    effect: Literal["up", "down"]
+    strength: int
+    age_days: int
+    weight: float          # 0.5 ^ (age / 30 days), times 1.5 when the story is still open
+    open: bool
+    points: float          # signed, 0.012 = +1.2 percentage points, before the limit on the sum
+
+
 class OracleSummary(BaseModel):
     """Probability that the claim comes true, from several independent methods compared side by side."""
 
@@ -664,16 +706,37 @@ class OracleSummary(BaseModel):
     target_date: date
     low: Optional[float] = None
     high: Optional[float] = None
-    tier: Literal["lottery", "low", "possible", "likely", "unknown"]
+    # since v0.16.1 the five words of tiers.py; cases stored before keep "lottery", "low" and "possible"
+    tier: Literal["almost_no", "unlikely", "uncertain", "likely", "very_likely", "unknown", "lottery", "low", "possible"]
     tier_label: "Text"
     methods: list[ProbabilityMethod] = Field(default_factory=list)
     ladder: list[LadderRow] = Field(default_factory=list)
     agreement: "Text"
     risk_free_rate: Optional[DecimalStr] = None
     condition: Literal["end", "touch"] = "end"  # which probability the range uses
+    # the methods whose results make the headline range (since v0.17.0: the market-based ones, M1 and M2, when they exist);
+    # empty in cases stored before, which keep the older rule
+    counted: list[str] = Field(default_factory=list)
+    basis: Literal["index", "market", "fallback", ""] = ""  # "index" since v0.18.0; the others belong to cases of v0.17.0
+    # since v0.18.0 the headline is one number, a weighted index of the counted methods: low == high == the index
+    weights: dict[str, float] = Field(default_factory=dict)   # method id -> its share of the index (they add up to 1)
+    spread_low: Optional[float] = None                         # the lowest and the highest of the counted methods
+    spread_high: Optional[float] = None
+    calibrated: Optional[float] = None                         # how often the claim came true in the backtest when the index said this
+    # since v0.21.0 the scored events of the catalyst register move the index by a bounded amount: low == high == base + event_tilt
+    base: Optional[float] = None                               # the index of the methods, before the events
+    event_tilt: Optional[float] = None                         # what the events add, after the limits; None when no event is scored
+    event_raw: Optional[float] = None                          # the sum of the points before the limits
+    event_parts: list[EventTiltPart] = Field(default_factory=list)
+    event_note: Optional["Text"] = None
     spot: Optional[float] = None
     base_volatility: Optional[float] = None  # historical volatility, used by the scenario panel
     implied_volatility: Optional[float] = None
+
+    @property
+    def index(self) -> Optional[float]:
+        """The weighted index of the methods: the main number before events (cases stored before v0.21.0 hold it in ``low``)."""
+        return self.base if self.base is not None else self.low
 
 
 class EventMove(BaseModel):
@@ -696,6 +759,252 @@ class ScenarioResult(BaseModel):
     p_if_failure: float
     break_even: Optional[float] = None  # success probability needed for 50%; None if out of reach
     market_implied: Optional[float] = None  # success probability that reproduces the option-implied value
+
+
+# ---------------------------------------------------------------- market structure and probability change (v0.11)
+
+
+class PeerInfo(BaseModel):
+    """One stock of the peer basket: how closely it moved with the claim's stock, and whether the basket uses it."""
+
+    symbol: str
+    correlation: Optional[float] = None  # daily log returns over the estimation window
+    window_return: Optional[float] = None  # simple return over the explained window
+    used: bool = False
+    note: Optional["Text"] = None  # why it is left out
+
+
+class StructureDay(BaseModel):
+    """One trading day of the explained window, split like the window (log returns, 0.01 = about 1%)."""
+
+    day: date
+    stock: float  # simple return of the day
+    market: float
+    peers: float
+    own: float  # the day's abnormal return: what the market and the peers do not explain
+    flagged: bool = False  # |own| above twice the residual standard deviation of the estimation window
+    filings: list[str] = Field(default_factory=list)  # SEC filings on this day or the trading day before, e.g. "8-K 2026-10-14 (7.01, 8.01)"
+    headlines: list[str] = Field(default_factory=list)  # flagged days: headlines published since the previous close (v0.12)
+
+
+class RegimeReading(BaseModel):
+    symbol: str
+    label: "Text"
+    last: float
+    change: Optional[float] = None  # simple return over the explained window (VIX: change in points)
+
+
+class ShiftedRange(BaseModel):
+    """The headline methods recomputed at another price: a scenario, never a forecast."""
+
+    spot_from: float
+    spot_to: float
+    low: Optional[float] = None
+    high: Optional[float] = None
+    base: Optional[float] = None  # since v0.21.0: the index at that price before the events; low and high hold it with the events
+    methods: dict[str, float] = Field(default_factory=dict)  # method id -> probability under the claim's condition
+
+
+class MarketStructure(BaseModel):
+    """How much of the stock's recent move came with the market, with similar stocks, and from the stock alone.
+
+    Factor model over daily log returns: r = a + b_market * r_SPY + b_peers * u + e, where u is the
+    peer basket's return beyond its own market exposure. Parts of the window add up to the simple
+    return of the window (log parts scaled by (e^L - 1) / L). A statistical split, not a cause.
+    """
+
+    symbol: str
+    market_symbol: str = "SPY"
+    window_start: date  # last close before the explained window
+    window_end: date
+    window_days: int
+    estimation_start: date
+    estimation_end: date
+    estimation_days: int
+    beta_market: float
+    beta_peers: Optional[float] = None
+    peers_market_beta: Optional[float] = None  # the basket's own market beta, removed from u
+    r_squared: float
+    residual_sd: float  # daily, estimation window
+    total: float  # simple return of the window
+    market_part: float
+    peer_part: float
+    own_part: float
+    log_total: float
+    log_market: float
+    log_peers: float
+    peers: list[PeerInfo] = Field(default_factory=list)
+    peer_source: Optional[str] = None
+    days: list[StructureDay] = Field(default_factory=list)
+    regime: list[RegimeReading] = Field(default_factory=list)
+    shifted: Optional[ShiftedRange] = None  # "if the market and peer parts returned"
+    notes: list["Text"] = Field(default_factory=list)
+    source_urls: list[str] = Field(default_factory=list)
+    retrieved_at: datetime
+    data_mode: DataMode
+
+
+class ChangePart(BaseModel):
+    key: Literal["market", "peers", "own", "price", "volatility", "time", "rate"]
+    delta: float  # contribution to the probability (0.01 = 1 percentage point)
+    detail: "Text"
+
+
+class MethodChange(BaseModel):
+    method: str  # "M1" or "M2"
+    before: float
+    after: float
+    parts: list[ChangePart] = Field(default_factory=list)
+
+
+class ProbabilityChange(BaseModel):
+    """Why the probability moved since the last run of the same claim (Shapley split, independent of order)."""
+
+    previous_case_id: str
+    previous_created_at: datetime
+    previous_market_date: date
+    market_date: date
+    condition: Literal["end", "touch"]
+    previous_low: Optional[float] = None
+    previous_high: Optional[float] = None
+    low: Optional[float] = None
+    high: Optional[float] = None
+    spot_before: float
+    spot_after: float
+    price_split: bool = False  # the price move is split into market, peers and own
+    methods: list[MethodChange] = Field(default_factory=list)
+    note: Optional["Text"] = None
+
+
+# ---------------------------------------------------------------- catalysts (v0.12)
+
+
+class NewsItem(BaseModel):
+    published: datetime
+    publisher: str = ""
+    title: str
+    url: str
+    origin: Literal["yahoo", "google_news"]
+    query: Optional[str] = None  # the search that found it (Google News)
+
+
+class NewsFeed(BaseModel):
+    """Recent headlines about the company: Yahoo Finance's latest and a Google News search, newest first."""
+
+    items: list[NewsItem] = Field(default_factory=list)
+    queries: list[str] = Field(default_factory=list)
+    source_urls: list[str] = Field(default_factory=list)
+    retrieved_at: datetime
+    data_mode: DataMode
+
+
+class EarningsDate(BaseModel):
+    day: date
+    estimate: bool  # Yahoo marks a date that the company has not confirmed
+    eps_average: Optional[float] = None
+    revenue_average: Optional[float] = None
+    source_url: str
+    retrieved_at: datetime
+    data_mode: DataMode
+
+
+class CatalystSource(BaseModel):
+    """One numbered source handed to Claude: a headline (N..) or a sentence of an 8-K exhibit (F..)."""
+
+    id: str
+    kind: Literal["news", "filing"]
+    day: date
+    text: str
+    publisher: str = ""  # news outlet, or "SEC 8-K (7.01, 8.01)"
+    url: str = ""
+
+
+class Reaction(BaseModel):
+    """How the stock moved around an event: the event day and the next, split like the market-structure step."""
+
+    start: date  # last close before the event
+    end: date  # close of the second trading day (or the last one available)
+    days: int
+    stock: float  # simple return of the stock
+    own: Optional[float] = None  # simple return of the part the market and the peers do not explain
+    basis: Literal["market+peers", "market", "none"] = "none"
+
+
+class CatalystEvent(BaseModel):
+    day: date
+    change_en: str
+    change_zh: str
+    source_ids: list[str] = Field(default_factory=list)
+    sources: list[CatalystSource] = Field(default_factory=list)  # copied, so the register keeps them after the proposal is gone
+    reaction: Optional[Reaction] = None
+    # since v0.21.0 Claude scores each event; code turns the scores into points of the main number (event_tilt.py)
+    effect: Literal["up", "down", "none"] = "none"  # does this news make a higher share price more or less likely
+    strength: Optional[int] = None  # 0 not important, 1 minor, 2 material, 3 changes the outlook; None = written before v0.21.0
+
+
+class Catalyst(BaseModel):
+    """A growth driver or risk the price depends on (a product, an approval, a contract...), with its dated history."""
+
+    id: str
+    name_en: str
+    name_zh: str
+    kind: Literal["product", "regulatory", "contract", "financing", "deal", "operations", "legal", "leadership", "other"] = "other"
+    status: Literal["upcoming", "in_progress", "achieved", "delayed", "cancelled"] = "upcoming"
+    expected: Optional[str] = None  # as the sources give it: "2027", "2027-H1", "2027-Q2", "2027-03" or "2027-03-15"
+    expected_day: Optional[date] = None  # a day for the scenario: the middle of that span
+    direction: Literal["up", "down", "mixed"] = "up"  # which way success would move the price
+    summary_en: str = ""
+    summary_zh: str = ""
+    search_terms: list[str] = Field(default_factory=list)
+    source_ids: list[str] = Field(default_factory=list)
+    sources: list[CatalystSource] = Field(default_factory=list)
+    events: list[CatalystEvent] = Field(default_factory=list)
+    updates: Optional[str] = None  # in a proposal: the id of the confirmed catalyst it updates
+    problems: list[str] = Field(default_factory=list)  # what the check found; empty = every citation, date and number checks out
+    proposed_by: Optional[str] = None
+    confirmed_at: Optional[datetime] = None
+
+
+class MajorEvent(BaseModel):
+    """An event code found without Claude (v0.20.0): an 8-K item 5.02 filing and the headlines that report a change at the top."""
+
+    kind: Literal["leadership"] = "leadership"
+    day: date                      # the first day it was reported: the filing day, or a headline up to five days before it
+    filing_date: date
+    role: Optional[str] = None     # "CEO", "CFO", "chair", "founder", "president"; None when no headline names one
+    headlines: int = 0             # headlines that name a top role next to a word of change
+    samples: list[NewsItem] = Field(default_factory=list)
+    filing_url: str = ""
+    strong: bool = False           # enough headlines to say what the filing is about
+    reaction: Optional[Reaction] = None
+    in_register: bool = False      # the catalyst register already holds a leadership item around that day
+    register_updated: Optional[date] = None
+
+
+class CatalystRegister(BaseModel):
+    """The confirmed catalysts of one stock. Kept per ticker across cases; each case stores the version it used."""
+
+    ticker: str
+    company: Optional[str] = None
+    updated_at: datetime
+    catalysts: list[Catalyst] = Field(default_factory=list)
+    rejected: list[str] = Field(default_factory=list)  # names the user turned down, so they are not proposed again
+
+
+class CatalystProposal(BaseModel):
+    """Claude's proposed catalysts for a case, checked against the sources, waiting for the user's decision."""
+
+    status: Literal["ok", "refused", "error", "not_configured"]
+    model: str
+    created_at: datetime
+    themes: list[str] = Field(default_factory=list)  # the search terms of the first call
+    sources: list[CatalystSource] = Field(default_factory=list)
+    catalysts: list[Catalyst] = Field(default_factory=list)
+    usage: dict[str, int] = Field(default_factory=dict)
+    error: Optional[str] = None
+    decided_at: Optional[datetime] = None
+    accepted: list[str] = Field(default_factory=list)
+    dropped: list[list[str]] = Field(default_factory=list)  # v0.21.0: [id, name_en, name_zh, finding] of what the checks kept out
 
 
 class Fact(BaseModel):
@@ -758,6 +1067,15 @@ class ReferenceSnapshot(BaseModel):
     data_modes: dict[str, str] = Field(default_factory=dict)
 
 
+class StaleSource(BaseModel):
+    """A source that did not answer during a live run: the case used the answers it gave earlier, and says so."""
+
+    source: str                 # the outside service, by the name the sequence diagram gives it
+    answers: int                # how many of its answers came from the stored copies
+    captured_at: datetime       # when the oldest of them was fetched
+    age_hours: float            # how old that one was when the case ran
+
+
 class CaseStatus(str, Enum):
     EVALUATED = "evaluated"
     EVALUATED_WITH_PROVIDER_ERRORS = "evaluated_with_provider_errors"
@@ -791,6 +1109,13 @@ class CaseResult(BaseModel):
     prediction_markets: Optional[PredictionMarkets] = None
     sentiment: Optional[SentimentSnapshot] = None
     oracle: Optional[OracleSummary] = None
+    structure: Optional[MarketStructure] = None
+    change: Optional[ProbabilityChange] = None
+    news: Optional[NewsFeed] = None
+    earnings: Optional[EarningsDate] = None
+    catalysts: Optional[CatalystRegister] = None  # the stock's confirmed catalysts as this case saw them
+    major_events: list[MajorEvent] = Field(default_factory=list)  # found by code on this run (8-K item 5.02 with headlines)
+    catalyst_proposal: Optional[CatalystProposal] = None
     data_steps: dict[str, str] = Field(default_factory=dict)  # step -> "ok" | "failed"
     narrative: Optional[Narrative] = None  # the latest narrative written, any language
     narratives: dict[str, Narrative] = Field(default_factory=dict)  # by language ("zh", "en")
@@ -801,6 +1126,8 @@ class CaseResult(BaseModel):
     warnings_zh: list[str] = Field(default_factory=list)
     data_modes: dict[str, str] = Field(default_factory=dict)
     mixed_sources: bool = False
+    # since v0.25.0: the sources that did not answer and whose earlier answers were used (the fallback of risk R.2)
+    stale_sources: list["StaleSource"] = Field(default_factory=list)
     # "not_implemented" is kept so cases saved by v0.1 still load
     analysis_status: Literal["not_run", "deterministic_rules", "not_implemented"] = "not_run"
     disclaimer: str = (
