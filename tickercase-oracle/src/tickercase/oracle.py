@@ -12,8 +12,13 @@ M4 history    share of past windows of the same length in which this stock rose 
               as much as needed. Windows overlap heavily, so it is used in the range only when
               the history covers at least 4 non-overlapping windows; otherwise it is context.
 
-The range is [min, max] over the usable methods. No method is weighted by judgement;
-where they disagree the summary says which is higher and why it measures something different.
+The headline starts from one number, a weighted index of the methods (v0.18.1): 35 % option prices (M1), 30 % the
+stock's own volatility (M2), 30 % the stock's own history (M4) and 5 % the peer base rate (M3); the shares follow the
+backtest part of the way (docs/method-backtest.md). Since v0.21.0 the scored events of the catalyst register then move
+that index by a bounded amount (event_tilt.py); ``base`` keeps the index. A method that cannot be computed, or does not apply (M3 for a touch; M4 with fewer than four separate periods),
+drops out and the other weights are scaled up. ``low`` and ``high`` both hold the index; ``spread_low`` and
+``spread_high`` hold the lowest and highest method. Until v0.16 the headline was that spread itself, which a single
+stock's exceptional history could make twice as wide (NVDA: 35%-75%).
 
 The claim's condition decides which probability the range uses: "end" (at or above the
 target on the date) or "touch" (reaches it at any time before). For touch, M1 and M2 use
@@ -34,7 +39,9 @@ from statistics import NormalDist
 from typing import Optional
 
 from .calculations import deadline_from
+from .calibration import calibrated
 from .fmt import pct, prob, prob_range
+from .tiers import TIERS as TIER_WORDS, tier as range_tier
 from .models import (
     BaseRate,
     EventMove,
@@ -53,6 +60,21 @@ from .models import (
 from .providers.options import iv_at
 
 _N = NormalDist()
+MARKET_METHODS = ("M1", "M2")  # option prices and the stock's own volatility
+# the share of each method in the headline index; the shares of the methods present are scaled to add up to 1.
+# Since v0.18.1 the history holds 30 %: in the backtest the index scored better and ran less low as its share rose
+# to about a half (docs/method-backtest.md). It stays under a third because the backtest holds no stock with a past
+# as extreme as the ones this method misjudges most.
+METHOD_WEIGHTS = {"M1": 0.35, "M2": 0.30, "M4": 0.30, "M3": 0.05}
+
+
+def weighted_index(values: dict[str, float]) -> tuple[Optional[float], dict[str, float]]:
+    """The index of the methods present and the share each one has in it."""
+    total = sum(METHOD_WEIGHTS.get(k, 0.0) for k in values)
+    if total <= 0:
+        return None, {}
+    weights = {k: METHOD_WEIGHTS.get(k, 0.0) / total for k in values if METHOD_WEIGHTS.get(k, 0.0) > 0}
+    return sum(values[k] * w for k, w in weights.items()), weights
 MIN_INDEPENDENT_WINDOWS = 4
 
 
@@ -248,33 +270,35 @@ def build_oracle(
     def value(m: ProbabilityMethod) -> Optional[float]:
         return m.touch_probability if touch else m.probability
 
-    usable = [m for m in methods if m.status == "ok" and value(m) is not None
-              and not (m.id == "M4" and independent_windows(price_rate) < MIN_INDEPENDENT_WINDOWS)
+    computed = [m for m in methods if m.status == "ok" and value(m) is not None]
+    usable = [m for m in computed if not (m.id == "M4" and independent_windows(price_rate) < MIN_INDEPENDENT_WINDOWS)
               and not (touch and m.id == "M3")]
-    if usable:
-        values = sorted(value(m) for m in usable)
-        low, high = values[0], values[-1]
-        mid = values[len(values) // 2] if len(values) % 2 else (values[len(values) // 2 - 1] + values[len(values) // 2]) / 2
-        tier = next(t for t in TIERS if mid < t[0])
-        lo_m = min(usable, key=value)
-        hi_m = max(usable, key=value)
+    index, weights = weighted_index({m.id: value(m) for m in usable})
+    spread_low = spread_high = calibrated_p = None
+    basis = "index" if index is not None else ""
+    if index is not None:
+        usable = [m for m in usable if m.id in weights]
+        low = high = index
+        spread_low, spread_high = min(value(m) for m in usable), max(value(m) for m in usable)
+        calibrated_p = calibrated(index, "touch" if touch else "end")
+        short = {"M1": T("options", "期权"), "M2": T("volatility", "波动"), "M4": T("own history", "自身历史"), "M3": T("peers", "同规模公司")}
+        parts_en = ", ".join(f"{short[m.id].en} {_pct(value(m))} at {round(weights[m.id] * 100)}%" for m in usable)
+        parts_zh = "，".join(f"{short[m.id].zh} {_pct(value(m))} 占 {round(weights[m.id] * 100)}%" for m in usable)
         if len(usable) == 1:
-            agreement = T(f"Only one method could be computed ({hi_m.name.en}); treat the result with care.",
-                          f"只有一种方法算出了结果（{hi_m.name.zh}），请谨慎看待。")
-        elif high < 0.10:
-            agreement = T(f"All {len(usable)} methods put it below 10% ({prob_range(low, high, 1)}); the lowest is {lo_m.name.en}, "
-                          f"which measures {lo_m.measures.en}.",
-                          f"{len(usable)} 种方法都低于 10%（{prob_range(low, high, 1)}）；最低的是{lo_m.name.zh}，它衡量的是{lo_m.measures.zh}。")
-        elif low > 0 and high / low <= 3:
-            agreement = T(f"The {len(usable)} methods agree within a factor of 3: {prob_range(low, high, 1)}.",
-                          f"{len(usable)} 种方法相差不到 3 倍：{prob_range(low, high, 1)}。")
+            agreement = T(f"Only one method could be computed ({usable[0].name.en}); treat the result with care.",
+                          f"只有一种方法算出了结果（{usable[0].name.zh}），请谨慎看待。")
         else:
-            agreement = T(f"The methods disagree: {hi_m.name.en} gives {_pct(high)}, {lo_m.name.en} gives {_pct(low)}. "
-                          f"They measure different things: {hi_m.measures.en}; versus {lo_m.measures.en}.",
-                          f"各方法差别较大：{hi_m.name.zh}给出 {_pct(high)}，{lo_m.name.zh}给出 {_pct(low)}。"
-                          f"它们衡量的东西不同：前者是{hi_m.measures.zh}；后者是{lo_m.measures.zh}。")
-        tier_key, tier_label = tier[1], T(tier[2], tier[3])
+            agreement = T(f"The main number is a weighted index of {len(usable)} methods: {parts_en}. They run from {_pct(spread_low)} to {_pct(spread_high)}.",
+                          f"主数字是 {len(usable)} 种方法的加权指数：{parts_zh}。各方法的结果从 {_pct(spread_low)} 到 {_pct(spread_high)}。")
+        if calibrated_p is not None:
+            agreement = T(agreement.en + f" In the backtest, when the index said {_pct(index)}, the claim came true about {_pct(calibrated_p)} of the time "
+                                         "(large US stocks that still trade, 2006 to 2025; see docs/method-backtest.md).",
+                          agreement.zh + f"回测中这个指数说 {_pct(index)} 的时候，实际发生了约 {_pct(calibrated_p)}"
+                                         "（2006 到 2025 年、至今仍在交易的美国大公司；见 docs/method-backtest.md）。")
+        tier_key = range_tier(low, high)
+        tier_label = T(*TIER_WORDS[tier_key])
     else:
+        usable = []
         low = high = None
         tier_key, tier_label = "unknown", T("Not enough data", "数据不足")
         agreement = T("No method could be computed in this run.", "本次没有任何方法能算出结果。")
@@ -300,7 +324,9 @@ def build_oracle(
     return OracleSummary(target_price=claim.target_price, target_date=target_date, low=low, high=high, tier=tier_key, tier_label=tier_label,
                          methods=methods, ladder=ladder, agreement=agreement, risk_free_rate=risk_free, condition="touch" if touch else "end",
                          spot=spot, base_volatility=float(market.annualized_volatility) if market and market.annualized_volatility else None,
-                         implied_volatility=options.target_iv if options is not None else None)
+                         implied_volatility=options.target_iv if options is not None else None,
+                         counted=[m.id for m in usable], basis=basis if usable else "", weights=weights,
+                         spread_low=spread_low, spread_high=spread_high, calibrated=calibrated_p)
 
 
 # ---------------------------------------------------------------- event move from the term structure

@@ -42,6 +42,117 @@ TickerCase is a stock-only take on [komako-workshop/digital-oracle](https://gith
 
 The range is [min, max] of the usable methods; the tier follows the middle estimate (<5% lottery, 5–20% unlikely, 20–50% possible, >50% likely). Where methods disagree, the page says which is higher and what each measures. Context layers: insider Form 4 transactions split by code (only P purchases and S sales are trades by choice; grants, exercises and tax withholding are not selling), Polymarket contracts on the ticker, CNN Fear & Greed, S&P 500 and Nasdaq-100 returns over the same length. The page shows each data step as it runs and which ones failed. A live RKLB run fetches all eleven steps in about 12 seconds.
 
+## When the market source does not answer (v0.25.0)
+
+The risk assessment of Lab Manual Chapter 12 (`docs/risks.md`) put one risk in the red area: the market data source changes, slows or blocks the product, and three of the four methods lose their inputs (R.2). The product now contains that failure.
+
+- **Fallback.** Every good answer of the market source is kept (`data/snapshots/last_good`). When the source does not answer, the last good answer to the same request is used, and the answer page says, before the number, which source was away and how many hours old its figures are. The case record keeps it (`stale_sources`).
+- **Guardrail on the fallback.** A stored answer older than 72 hours (`TICKERCASE_FALLBACK_HOURS`, 0 switches the fallback off) is refused, and so is a stored file that is damaged, dated in the future or written for another request. An old price must never pass for today's.
+- **Tests of the failure path** (`tests/test_fallback.py`, 22 tests): the source refuses every request and the case gives the same number and says the data is 20 hours old; past the limit the market steps are reported as failed; six kinds of damaged or planted file are not served; a wrong request is never hidden by a stored answer.
+- Not covered: a change of the response format that still parses (the step fails as before), and a stock asked for the first time during an outage.
+- `docs/risks.md` is the product risk register: five system-level risks from the interactions of the architecture model, six risks of an AI-enabled product, the scales, and what the product does about each one.
+
+## Two lanes: the SEC and the market sources are asked side by side (v0.24.0)
+
+A trade study (Lab Manual Chapter 11) settled how A2 asks its sources. Three alternatives were measured with 10 live runs each on 2026-11-21:
+
+| Alternative | RUN to the report, mean | Range |
+|---|---|---|
+| AL.1 Sequential (the product until now) | 27.3 s | 26.7 to 28.3 s |
+| AL.2 Parallel by source | 19.6 s | 18.6 to 25.7 s |
+| AL.3 Parallel, half the spacing to the market source | 16.7 s | 15.0 to 24.9 s |
+
+AL.2 was selected by a swing weight matrix over five criteria (time, standing with the market source, completion when a source is down, the same record on replay, life cycle cost) and is the default. The decision, the criteria, the measures, the sources checked and what the other two would have required are in `docs/decisions/0001-acquisition-mode.md`; the judgments and figures are in `docs/decisions/0001-inputs.json` and `python scripts/trade_study.py` recomputes every table.
+
+- `TICKERCASE_ACQUISITION=sequential` brings the old order back. Both modes must write the same case (`tests/test_acquisition_mode.py`).
+- Each source keeps its own fetcher and its own request spacing, so no source is asked faster than before.
+- A failure in one lane is counted against that lane's step only, and the page is told of progress from the calling thread only.
+- Not done: `scripts/timing_report.py` adds the waits of the two lanes together, so its "own work" figure is wrong for a parallel run; A4 still sends its 14 follow-up requests after A2.
+
+## One path: what the number means, and why (v0.23.0)
+
+The goal of the project grew: a reader should leave knowing what the probability means and what the claim rests on, in place of "I like this sector". The audience is every retail investor, so the page for novices stays the only way in.
+
+- **One path.** The switch between a simple and an expert view is gone. Everyone opens on one sentence and one answer; the pages of the console are the full evidence behind a row of cards (the key "Full evidence"), and one key leads back to the answer.
+- **What the number means** (`outcomes.py`). Under the answer, one bar divided by three outcomes that add up to 100 %: the claim comes true; it does not, and the price ends at or above today's; it does not, and the price ends below today's. Each price method splits its own result three ways (closed forms for the two lognormal methods, counted windows for the stock's own past) and the splits are joined with the weights of the main number. A path that reached the target and fell back below today's price belongs to the first outcome.
+- **Three questions**, each a row of cards with one number and one line:
+  1. *What does today's price already count on?* Today's multiple of yearly revenue (or profit), the growth the target needs at that multiple, how often companies of this size grew that fast, and how fast this one grew.
+  2. *How much of what it earns is left for its owners?* Profit per 100 dollars sold, free cash flow, what goes to research and equipment, and the change in the number of shares over a year. All from the company's annual reports to the SEC (four more XBRL series are read: operating cash flow, capital spending, research and development, share-based pay). A card is left out when the company did not report the figure.
+  3. *How was the number worked out?* The method cards the page had before.
+- Limits: the outcomes are a model output under the assumptions of the methods, without dividends or taxes, and a case stored before this version shows no bar (its history holds no down windows). The cards of question 2 describe one fiscal year. The fundamentals page of the console does not show the cash-flow figures yet; the card's details hold the amounts and the fiscal year.
+- Later versions: who the company competes with, the few numbers that drive its business, a self-check of which of these the reader can answer, and a one-page statement of the reader's own reasons.
+
+## One machine (v0.22.0)
+
+The simple view was drawn again in Google Stitch: a base screen of the answer page and three directions (quiet instrument, control panel, printout; the screens are in `docs/design/stitch`). The control panel was chosen and written into the existing style sheet by hand. Stitch's markup, fonts and invented figures were not taken; only the look was.
+
+- **Bridge.** The name is a brass plate with two studs, and three lamps come on one after the other.
+- **Screen.** The bezel has four screws. The main number is larger (up to 136 px), the marker is a white needle with two arrowheads that settles after it slides, and each method's label is a small box.
+- **Reasons.** A card is a meter module: a stamped plate (for, against, neutral) that lands after the card, and a segmented gauge for its share of the index that fills in steps. The big-news card has an amber edge.
+- **Keys.** On the simple pages a key stands on a visible side and travels 4 px when pressed (`SKIN` in `ui/simple.py`, added by `app.py` on these pages only; the console keeps its keys).
+- Everything is CSS. A reader who asked the system for less motion gets none of it, and every element rests in its final state.
+
+## Events in the main number (v0.21.0)
+
+Until v0.20 the events were shown beside the number. Now the scored events of the catalyst register move it, by a bounded amount.
+
+- **Claude picks and scores, code converts.** For each event Claude gives a direction (up or down for the share price) and a strength (1 minor, 2 material, 3 changes the outlook). It gives no probability. Code checks the sources as before and converts by one fixed rule (`src/tickercase/event_tilt.py`): points = direction × strength × 1 point × 0.5^(days/30), times 1.5 when the story is still open and not dated after the deadline.
+- **Limits.** One catalyst counts once, by its largest event. Only the five largest count. Their sum is at most ±5 points and never more than half of the way from the index to 0 % or 100 %. Events older than 120 days are left out.
+- **Both numbers stay on the page.** The weighted index of the methods is kept (`OracleSummary.base`); the main number is the index plus the events ("index 46.7% → main number 43.7%"). The backtest line refers to the index. The event part has no backtest: there is no archive of past news to replay.
+- **One key on the event page.** UPDATE reads the news and filings, makes the two Claude calls, and writes what passes the checks into the register; a finding about one event leaves out that event, a finding about the catalyst leaves out the catalyst, and both are listed. The model is told what the free detector of v0.20 found, so a change at the top is not left out. The full register and its timelines are folded under one line; a catalyst can be removed there, and the number follows.
+- **Simple view.** A chip "Recent events 47% → 44%" beside the answer; the big-news card says "in the number" once the register holds the event.
+
+A register written before v0.21.0 carries no scores: its events count for nothing until UPDATE is pressed.
+
+## A change at the top is seen (v0.20.0)
+
+NVDA's chief executive left on 2026-11-12 and the page said nothing: the catalyst register is written by Claude only when the SCAN key is pressed, it was last updated in October, and its definition of a catalyst had no place for a change of leader.
+
+- **A kind of catalyst.** `leadership` joins the kinds, and both prompts name a change of the chief executive or another top leader (departure, removal, interim appointment, search, successor). Prompt version 2.
+- **Found by code on every run, at no cost** (`major_events.py`). A company reports such a change in an 8-K under item 5.02. A 5.02 filing of the last 45 days, with at least three headlines that name a top role next to a word of change, is a strong event; its day is the first report, and the stock's move over two days is measured as for any catalyst event. A 5.02 filing without such headlines is only listed on the event page (the item also covers directors and pay plans, and the code does not read the text).
+- **Said in both views.** The event page says what was found and whether the register holds it ("the register was last updated on 2026-10-28 and does not hold it; press SCAN"). The simple view shows a card above the reasons: the event, the move, and under "details" the sources and the sentence that this event does not change the number directly: the methods read prices, and the option prices and swings since then hold what the market thinks of it.
+- Limits: headlines of 30 days in English; the role comes from the headlines, not from the filing; only leadership changes are looked for.
+
+## A simple view that moves (v0.19.0)
+
+The simple view was plain: a number, three paragraphs and a list. It now shows the same facts as a picture, and the small print opens on request.
+
+- **The answer arrives.** The screen flickers on, the verdict is uncovered, the main number counts up from zero while its marker slides along the bar. One dot per method drops onto the bar where that method stands, sized by its share, and a spark flies from each dot to the marker: the weighted average, drawn instead of described.
+- **Three chips replace three paragraphs.** "In the past it really happened: about 56%" (a diamond on the bar marks the place), "Still there on the last day: about 15%" and "3 methods, weighted". Each opens in place and shows the full sentence it replaced.
+- **Reasons are cards.** A title, one large number, one short line and the share of the main number as a bar; the full sentence and the limit of the number open under "details". The numbers shown for context are smaller cards below.
+- **Nothing was removed.** Every limit the page stated before is still in the page, one tap away. The page takes no script: all of it is CSS, and a reader who asked the system for less motion gets the finished page without the animation.
+- A note for whoever edits the style sheet: Streamlit drops a whole style block that holds an angle bracket, so the one in the counter's property is written as a CSS escape.
+
+## One index, checked against the past (v0.18.0, weights of v0.18.1)
+
+v0.17.0 took the stock's own history and the peer rate out of the main number. Since v0.18.0 they are in it with a weight, and the main number is one figure.
+
+- **The main number is a weighted index.** `oracle.METHOD_WEIGHTS`: option prices (M1) 35 %, the stock's own volatility (M2) 30 %, the stock's own history (M4) 30 %, the peer base rate (M3) 5 %. A method that could not be computed, or that does not measure the question (M3 for "reaches on any day", M4 with fewer than four separate periods), drops out and the others share its weight in proportion. NVDA to $300 in three years: options 35 % at 37 %, volatility 36 % at 32 %, history 75 % at 32 %, index **48 %**.
+- **The spread stays visible.** `oracle.spread_low` and `spread_high` are the lowest and the highest of the methods in the index; the simple view draws them as a faint band behind the marker and the console lights them on the ruler. Each reason shows its share.
+- **A line from the backtest.** `scripts/backtest_methods.py --export` replays the index on 49,332 past cases and writes `src/tickercase/calibration.json`; the page reads it and says "when this index said 48 %, the claim came true about 55 % of the time", with what the backtest leaves out (survivors only; no past option prices, so the volatility method stands in for them). The main number itself is not shifted by it. Bins with fewer than 1,000 cases are not used, and outside the bins the line is not shown.
+- **The weights follow the backtest part of the way (v0.18.1).** v0.18.0 gave the history 15 %. In the backtest the index scored best with the history near a half, and ran less low as its share rose; v0.18.1 moves it to 30 %, which takes most of that gain (see `docs/method-backtest.md`). It stays under a third because the backtest holds survivors only and no stock with a past as extreme as the ones this method misjudges most. After a change of the weights, run the script with `--export` again so that the line on the page describes the index as it is.
+
+## A main number you can use (v0.17.0)
+
+Until now the headline was the lowest to the highest of every method. For a stock with an exceptional past that range was too wide to mean anything: NVDA to $300 in three years read "35% to 75%", because the stock's own history (75%) sat far from what the market prices in (35%).
+
+- **The headline is the two market-based methods**, M1 (option prices) and M2 (the stock's own volatility). They ask the same question of independent data, so the range is narrow when they agree: the same claim now reads "Unlikely: roughly 34% to 36%".
+- **The stock's own history (M4) and the peer base rate (M3) are context.** They are shown, with their numbers, under "For context (not part of the main number)", and each says why: the history is what happens if the stock repeats its own past, which is optimistic for a stock that is asked about because it rose; the peer rate is about the business, not the price.
+- When neither market method can be computed, the older rule applies and the page says so. Cases stored before keep the range they were saved with.
+- Each case records which methods made its headline (`oracle.counted`), and the console, the report text and the simple view read that one list.
+- Also from the second review round: a date written out ("2028-11-13") is the deadline as written, not the end of its year; a target that is not a number is named as that; "doubles" follows the new stock when the stock is changed on the confirmation page.
+
+## One story in both views (v0.16.1)
+
+Five reviewers (retail investor, professional, economist, and two readers new to stocks, one Chinese and one English) used v0.16.0. What they found, fixed by class:
+
+- **One set of words.** `src/tickercase/tiers.py` holds the five words for a range; the console, the report text and the simple view all use it. The older four tiers ("lottery-ticket odds" and the rest) are gone, and a stored case reads by today's rule.
+- **The simple view counts what the console counts.** The number of methods in "why a range" and the "on the last day" range now follow the console's rule (a method shown only for context is not counted).
+- **Limits are kept.** Each reason from a method carries the limit the console states: overlapping periods, option prices include a charge for risk, only surviving companies are counted.
+- **Plain messages.** An unknown company, a sentence about a fall, or a missing price or date each get one plain line; the console's log lines no longer show in the simple view, and a new sentence carries nothing over from the one before.
+- **The reader.** "一千二", "rise another 5%" are read; "跌到 200" / "falls to 200" is recognised as a fall and not turned into "at or above 200".
+- **Numbers.** A price already above the target is said as that, not as "needs to rise -16%"; 99.6% is no longer written ">99.9%"; a needed rise above 100% is not capped.
+
 ## Simple view (v0.16.0)
 
 The page now opens on a view for a reader who does not follow stocks. The console with its three input steps and seven report pages is still there, one key away.

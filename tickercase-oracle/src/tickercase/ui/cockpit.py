@@ -24,6 +24,7 @@ from ..calculations import deadline_from
 from ..fmt import about, prob, prob_ends, prob_num, prob_range
 from ..models import VERDICT_DISPLAY_ZH, CaseResult, Narrative
 from ..oracle import MIN_INDEPENDENT_WINDOWS, independent_windows
+from ..tiers import BANDS, EDGES, TIERS, tier as range_tier
 
 PIX = "app/static/fonts/fusion-pixel-12px-monospaced-zh_hans.otf.woff2"
 VT = "app/static/fonts/VT323-Regular.woff2"
@@ -140,6 +141,12 @@ def cond_text(result: CaseResult, zh: bool) -> str:
     return L(zh, "期间任意时点触及", "Touch at any time") if is_touch(result) else L(zh, "到期时站在上面", "At or above on the date")
 
 
+def tier_text(o, zh: bool) -> str:
+    """The word for the range of a case, by today's rule, so a case stored under the older words reads like a new one."""
+    en, zh_word = TIERS[range_tier(o.low, o.high)]
+    return zh_word if zh else en
+
+
 def other_side(result: CaseResult, zh: bool) -> tuple[str, str]:
     """The condition the claim does not use, from the market-based methods: ('29–31%', 'options 30.1% · model 29.4%')."""
     o = result.oracle
@@ -179,7 +186,7 @@ def status_bar(result: CaseResult, zh: bool, jumps: Iterable[tuple[str, str]] = 
     touch = is_touch(result)
     if o is not None and o.low is not None:
         rng = (f'<span class="tc-rd tc-ph tc-row"><span class="tc-vt" style="font-size:34px;line-height:30px">{range_str(o.low, o.high)}</span>'
-               f'<span class="tc-inv">{esc(tr(o.tier_label, zh))}</span></span>')
+               f'<span class="tc-inv">{esc(tier_text(o, zh))}</span></span>')
     else:
         rng = f'<span class="tc-rd tc-ph tc-row"><span style="font-size:12px">{esc(L(zh, "数据不足，无法计算概率", "Not enough data to compute a probability"))}</span></span>'
     d, target = deadline_of(result).isoformat(), format(v.target_price, "f")
@@ -236,7 +243,10 @@ def claim_unit(result: CaseResult, zh: bool, label: str) -> str:
 
 
 def counted(result: CaseResult, m) -> bool:
-    """Whether a method may enter the headline range (M4 needs enough independent windows; M3 does not measure a touch)."""
+    """Whether a method is part of the headline range: the list the case recorded, or the older rule for cases stored
+    before v0.17.0 (M4 needs enough independent windows; M3 does not measure a touch)."""
+    if result.oracle.counted:
+        return m.id in result.oracle.counted
     if m.id == "M4" and independent_windows(result.price_base_rate) < MIN_INDEPENDENT_WINDOWS:
         return False
     if m.id == "M3" and result.oracle.condition == "touch":
@@ -254,7 +264,7 @@ def _zone(x: float) -> str:
 
 
 def split_methods(result: CaseResult) -> tuple[list, list]:
-    """(methods inside the headline range, computed methods shown as context), each as (method, probability)."""
+    """(methods that make the main number, computed methods shown as context), each as (method, probability)."""
     o = result.oracle
     touch = o.condition == "touch"
     used, ref = [], []
@@ -262,7 +272,7 @@ def split_methods(result: CaseResult) -> tuple[list, list]:
         p = m.touch_probability if touch else m.probability
         if m.status != "ok" or p is None:
             continue
-        inside = o.low is not None and o.low - 1e-12 <= p <= o.high + 1e-12 and counted(result, m)
+        inside = o.low is not None and counted(result, m)
         (used if inside else ref).append((m, p))
     return used, ref
 
@@ -289,7 +299,12 @@ def prb_screen(result: CaseResult, zh: bool, anim: bool) -> str:
     used_ids = {m.id for m, _ in used}
     lines = []
     if used:
-        lines.append(("", L(zh, "计入区间　", "In range　") + " · ".join(f"{m.id} {num_small(p)}" for m, p in used)))
+        share = lambda m: (f"×{round(o.weights[m.id] * 100)}%" if o.weights.get(m.id) else "")  # noqa: E731
+        lines.append(("", L(zh, "加权计入　", "Weighted　") + " · ".join(f"{m.id} {num_small(p)}{share(m)}" for m, p in used)))
+    if o.event_tilt is not None and o.base is not None:
+        from ..event_tilt import points_text
+        lines.append(("tc-am", L(zh, f"事件调整　指数 {o.base * 100:.1f}% → {o.low * 100:.1f}%（{points_text(o.event_tilt)} 个百分点 · {len(o.event_parts)} 件事 · 见 ④）",
+                                 f"Events　index {o.base * 100:.1f}% → {o.low * 100:.1f}% ({points_text(o.event_tilt)} points · {len(o.event_parts)} events · see ④)")))
     if ref:
         lines.append(("tc-dim", L(zh, "仅作参考　", "Context only　") + " · ".join(f"{m.id} {num_small(p)}" for m, p in ref)))
     _, side_detail = other_side(result, zh)
@@ -301,10 +316,12 @@ def prb_screen(result: CaseResult, zh: bool, anim: bool) -> str:
     lines_html = "".join(f'<div class="{c} tc-line">{esc(t)}</div>' for c, t in lines)
     if o.low is not None:
         big = (f'<span class="tc-vt tc-huge">{range_str(o.low, o.high)}</span>'
-               f'<div class="tc-col"><span class="tc-inv tc-tier">{esc(tr(o.tier_label, zh))}</span>{lines_html}</div>')
+               f'<div class="tc-col"><span class="tc-inv tc-tier">{esc(tier_text(o, zh))}</span>{lines_html}</div>')
     else:
         big = f'<span class="tc-nodata">{esc(L(zh, "数据不足，无法计算概率", "Not enough data to compute a probability"))}</span><div class="tc-col">{lines_html}</div>'
-    lo, hi = (sqrt_x(o.low), sqrt_x(o.high)) if o.low is not None else (None, None)
+    # the lit cells are the spread of the methods in the index; the main number is one point inside it
+    ends = (o.spread_low, o.spread_high) if o.spread_low is not None and o.spread_high is not None else (o.low, o.high)
+    lo, hi = (sqrt_x(ends[0]), sqrt_x(ends[1])) if o.low is not None else (None, None)
     cells = "".join(f'<span class="tc-cell {_zone(i * 2 + 1)}{" lit" if lo is not None and lo - 1 <= i * 2 + 1 <= hi + 1 else ""}"></span>' for i in range(50))
     groups: list[list] = []  # methods closer than 5% of the ruler share one label
     for m, p in sorted(used + ref, key=lambda x: x[1]):
@@ -325,18 +342,19 @@ def prb_screen(result: CaseResult, zh: bool, anim: bool) -> str:
         else:
             bottom.append(f'<span class="{cls} tc-mark{edge}" style="left:{x:.1f}%">{"▲" if inside else "△"}{esc(ids)}</span>')
     ticks = "".join(f'<span class="tc-dim tc-tick" style="left:{sqrt_x(p):.1f}%{";transform:translateX(-100%)" if p == 1 else ""}">{lbl}</span>'
-                    for p, lbl in ((0.01, "1%"), (0.05, "5%"), (0.2, "20%"), (0.5, "50%"), (1.0, "100%")))
-    zones = L(zh, ("彩票级 &lt;5%", "不太可能 5–20%", "有可能 20–50%", "较可能 &gt;50%"), ("Lottery &lt;5%", "Unlikely 5–20%", "Possible 20–50%", "Likely &gt;50%"))
-    zone_html = "".join(f'<span{" class=tc-am" if i == 3 else ""}>{z}</span>' for i, z in enumerate(zones))
+                    for p, lbl in ((0.01, "1%"),) + tuple((e, f"{round(e * 100)}%") for e in EDGES) + ((1.0, "100%"),))
+    zones = [b[2] if zh else b[1] for b in BANDS]
+    here = range_tier(o.low, o.high)
+    zone_html = "".join(f'<span{" class=tc-am" if BANDS[i][0] == here else ""}>{esc(z)}</span>' for i, z in enumerate(zones))
     # the count says which methods make the range, as the ⓘ note does ("2 种方法相差不到 3 倍"), not every reading shown
-    count = (L(zh, f"{len(used)} 种方法计入区间 · {len(ref)} 种仅参考", f"{len(used)} methods in the range · {len(ref)} for context") if ref
-             else L(zh, f"{len(used)} 种方法交叉核对", f"{len(used)} methods cross-checked"))
+    count = (L(zh, f"{len(used)} 种方法加权 · {len(ref)} 种仅参考", f"{len(used)} methods weighted · {len(ref)} for context") if ref
+             else L(zh, f"{len(used)} 种方法加权", f"{len(used)} methods weighted"))
     return (f'<div class="tc-bezel"><div class="tc-crt{" tc-boot" if anim else ""}"><span class="tc-noise"></span><div class="tc-crt-in tc-ph" style="gap:12px">'
             f'<span class="tc-dim tc-small">PRB&gt; {esc(head)} · {esc(count)}</span>'
             f'<div class="tc-bigrow">{big}</div>'
             f'<div class="tc-marks">{"".join(top)}</div><div class="tc-cells" aria-hidden="true">{cells}</div><div class="tc-marks">{"".join(bottom)}{ticks}</div>'
             f'<div class="tc-zones tc-dim">{zone_html}</div>'
-            f'<span class="tc-dim tc-small">{esc(L(zh, "平方根刻度 · 亮格为区间 · ▼▲ 计入 · ▽△ 仅参考", "square-root scale · lit cells = range · ▼▲ counted · ▽△ context"))}</span>'
+            f'<span class="tc-dim tc-small">{esc(L(zh, "平方根刻度 · 亮格为各方法的范围 · ▼▲ 计入 · ▽△ 仅参考", "square-root scale · lit cells = spread of the methods · ▼▲ counted · ▽△ context"))}</span>'
             f'</div></div></div>')
 
 
@@ -350,7 +368,8 @@ def method_strips(result: CaseResult, zh: bool, anim: bool, *, solo: bool = Fals
     for m in o.methods:
         p = m.touch_probability if touch else m.probability
         ok = m.status == "ok" and p is not None
-        tag = L(zh, "计入", "in range") if m.id in used_ids else (L(zh, "参考", "context") if m.status == "ok" else L(zh, "缺数据", "no data"))
+        w = f" {round(o.weights[m.id] * 100)}%" if o.weights.get(m.id) else ""
+        tag = (L(zh, "计入", "counted") + w) if m.id in used_ids else (L(zh, "参考", "context") if m.status == "ok" else L(zh, "缺数据", "no data"))
         lit = min(24, int(sqrt_x(p) // 4)) if ok else -1
         mcells = "".join(f'<span class="tc-mcell {_zone(i * 4 + 2)}{" lit" if i == lit else ""}"></span>' for i in range(25))
         a = pct_small(m.touch_probability, 1) if m.status == "ok" else "—"
@@ -539,10 +558,56 @@ def delta_block(result: CaseResult, zh: bool, *, notes: bool = True) -> str:
 
 KIND_NAMES = {"product": ("产品与项目", "product"), "regulatory": ("审批监管", "regulatory"), "contract": ("合同", "contract"),
               "financing": ("融资", "financing"), "deal": ("并购", "deal"), "operations": ("经营", "operations"), "legal": ("法律", "legal"),
-              "other": ("其他", "other")}
+              "leadership": ("管理层", "leadership"), "other": ("其他", "other")}
 STATUS_NAMES = {"upcoming": ("待发生", "upcoming"), "in_progress": ("进行中", "in progress"), "achieved": ("已实现", "achieved"),
                 "delayed": ("推迟", "delayed"), "cancelled": ("取消", "cancelled")}
 DIRECTION_NAMES = {"up": ("成功利好", "success lifts"), "down": ("成功利空", "success weighs"), "mixed": ("方向不定", "mixed")}
+
+
+def score_text(e, zh: bool) -> str:
+    """The score Claude gave an event: direction and strength, or that it carries none."""
+    if e.strength is None:
+        return L(zh, "未评分", "not scored")
+    if not e.strength or e.effect == "none":
+        return L(zh, "不计分", "no weight")
+    mark = ("▲" if e.effect == "up" else "▼") * int(e.strength)
+    return f"{mark} " + L(zh, f"{'利好' if e.effect == 'up' else '利空'} · 强度 {e.strength}", f"{'up' if e.effect == 'up' else 'down'} · strength {e.strength}")
+
+
+def tilt_block(result: CaseResult, zh: bool) -> str:
+    """What the events do to the main number: the index, the adjustment, and one row per counted event with its points."""
+    from ..event_tilt import CAP, points_text, unscored
+
+    o = result.oracle
+    if o is None or o.low is None or o.basis != "index":
+        return ""
+    base = o.index
+    title = L(zh, "EVT · 事件对主数字的影响", "EVT · what the events do to the main number")
+    if not o.event_parts:
+        n = unscored(result.catalysts, today=result.created_at.date())
+        why = (L(zh, f"事件表里有 {n} 件近 120 天的事还没有评分（旧版本写入）。按「更新事件」后新的事件才会计入。",
+                 f"{n} events of the last 120 days in the register carry no score (written by an older version). Press UPDATE and new events will count.") if n
+               else L(zh, "事件表里没有近 120 天内评过分的事件，主数字等于各方法的指数。",
+                      "The register holds no scored event of the last 120 days; the main number is the index of the methods."))
+        return (f'<div class="tc-rd tc-ph tc-dstrip"><span class="tc-dim tc-small">{esc(title)}</span>'
+                f'<span class="tc-line">{esc(L(zh, "指数", "index"))} {base * 100:.1f}% → {esc(L(zh, "主数字", "main number"))} {o.low * 100:.1f}% '
+                f'<span class="tc-am">(0)</span></span><span class="tc-dim tc-small">{esc(why)}</span></div>')
+    scale = max(abs(p.points) for p in o.event_parts)
+    rows = ""
+    for p in o.event_parts:
+        mark = ("▲" if p.effect == "up" else "▼") * p.strength
+        still = L(zh, " · 未结束 ×1.5", " · still open ×1.5") if p.open else ""
+        detail = (f"{p.day:%m-%d} · {tr(p.name, zh)}{L(zh, '：', ': ')}{tr(p.change, zh)} "
+                  + L(zh, f"（{p.catalyst_id} · {p.age_days} 天前{still}）", f"({p.catalyst_id} · {p.age_days} days ago{still})"))
+        rows += (f'<div class="tc-split"><span>{mark}</span><span class="tc-vt tc-sv">{p.points * 100:+.1f}</span>{dbar(p.points, scale)}'
+                 f'<span class="tc-dim tc-small">{esc(detail)}</span></div>')
+    cut = ""
+    if o.event_raw is not None and abs(o.event_raw - o.event_tilt) > 1e-9:
+        cut = L(zh, f" · 合计 {points_text(o.event_raw)}，按上限截断", f" · the sum is {points_text(o.event_raw)}, cut at the limit")
+    moved = L(zh, f"({points_text(o.event_tilt)} 个百分点 · 上限 ±{CAP * 100:.0f}{cut})", f"({points_text(o.event_tilt)} points · limit ±{CAP * 100:.0f}{cut})")
+    return (f'<div class="tc-rd tc-ph tc-dstrip"><span class="tc-dim tc-small">{esc(title)}</span>'
+            f'<span class="tc-line">{esc(L(zh, "指数", "index"))} {base * 100:.1f}% → {esc(L(zh, "主数字", "main number"))} {o.low * 100:.1f}% '
+            f'<span class="tc-am">{esc(moved)}</span></span><div class="tc-splits">{rows}</div></div>')
 
 
 def reaction_text(r, zh: bool) -> str:
@@ -603,7 +668,7 @@ def catalyst_card(c, zh: bool, *, proposed: bool = False) -> str:
     events = "".join(
         f'<div class="tc-catev"><span class="tc-catday">{e.day}</span><div class="tc-col" style="gap:2px;min-width:0">'
         f'<span>{esc(e.change_zh if zh and e.change_zh else e.change_en)}</span>'
-        f'<span class="tc-catsub">{esc(reaction_text(e.reaction, zh))} · {_source_links(e.sources, zh)}</span></div></div>' for e in c.events)
+        f'<span class="tc-catsub">{esc(score_text(e, zh))} · {esc(reaction_text(e.reaction, zh))} · {_source_links(e.sources, zh)}</span></div></div>' for e in c.events)
     problems = "".join(f'<div class="tc-catwarn">⚠ {esc(problem_text(x, zh))}</div>' for x in c.problems)
     ok = "" if c.problems else f'<div class="tc-catok">{esc(L(zh, "核对通过：引用、日期和数字都能在来源里找到", "checks pass: citations, dates and numbers are in the sources"))}</div>'
     return (f'<div class="tc-cat{" tc-catprop" if proposed else ""}">{head}{meta}<p class="tc-catsum">{esc(summary)}</p>'
@@ -661,7 +726,7 @@ def kline_notes(result: CaseResult, zh: bool) -> tuple[str, str]:
     if o is None:
         return "", ""
     t = format(o.target_price, "f")
-    main = f"{range_str(o.low, o.high)} {tr(o.tier_label, zh)}" if o.low is not None else L(zh, "数据不足", "not enough data")
+    main = f"{range_str(o.low, o.high)} {tier_text(o, zh)}" if o.low is not None else L(zh, "数据不足", "not enough data")
     side, _ = other_side(result, zh)
     touch_label, end_label = L(zh, f"期间触及 {t}", f"touch {t}"), L(zh, f"到期收在 {t} 以上", f"close above {t}")
     if o.condition == "touch":
@@ -850,7 +915,7 @@ def tape(c: CaseResult, zh: bool) -> str:
     v = c.confirmed_claim.values if c.confirmed_claim else None
     o = c.oracle
     rng = range_str(o.low, o.high, 1) if o is not None and o.low is not None else "—"
-    tier = tr(o.tier_label, zh) if o is not None and o.low is not None else ""
+    tier = tier_text(o, zh) if o is not None and o.low is not None else ""
     cond = (L(zh, "期间触及", "touch") if o.condition == "touch" else L(zh, "到期收在", "close")) if o is not None else ""
     meta = " · ".join(x for x in (f"{c.created_at:%m-%d}", c.case_id[:8].upper(), cond) if x)
     return (f'<div class="tc-tape">{mini_cassette()}'

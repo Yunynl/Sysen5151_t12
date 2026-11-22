@@ -255,6 +255,11 @@ class ReportedFacts(BaseModel):
     revenue: list[MetricPoint] = Field(default_factory=list)
     net_income: list[MetricPoint] = Field(default_factory=list)
     shares_outstanding: list[MetricPoint] = Field(default_factory=list)
+    # since v0.23.0, for the question "how much of what it earns is left for the owners"; empty in cases stored before
+    operating_cash_flow: list[MetricPoint] = Field(default_factory=list)
+    capital_expenditure: list[MetricPoint] = Field(default_factory=list)
+    research_development: list[MetricPoint] = Field(default_factory=list)
+    share_based_compensation: list[MetricPoint] = Field(default_factory=list)
     source_url: str
     retrieved_at: datetime
     source_captured_at: Optional[datetime] = None
@@ -440,6 +445,8 @@ class ClaimExtraction(BaseModel):
     currency: Optional[str] = None
     condition: Optional[Literal["end", "touch"]] = None  # "冲到 / 触及 / within 3 years" -> touch; "3 年后 / by 2030" -> end
     condition_text: Optional[str] = None
+    direction: Optional[Literal["down"]] = None  # "跌到 200", "falls to 200": a claim about a fall, which TickerCase does not check
+    direction_text: Optional[str] = None
     valuation_method: Optional[Literal["price_to_sales", "price_to_earnings"]] = None  # "按 40 倍市盈率" (v0.13.2)
     valuation_multiple: Optional[DecimalStr] = None
     valuation_text: Optional[str] = None
@@ -579,6 +586,10 @@ class PriceBaseRate(_Sourced):
     best_return: Optional[DecimalStr] = None
     history_start: date
     touch_hits: Optional[int] = None  # windows whose highest month-end close reached the target
+    # since v0.23.0, for the three outcomes: windows that ended below their start, and those of them in which no
+    # month-end close reached the target either
+    down_windows: Optional[int] = None
+    down_untouched: Optional[int] = None
 
 
 class BenchmarkReturn(BaseModel):
@@ -673,6 +684,21 @@ class LadderRow(BaseModel):
     model_touch: Optional[float] = None
 
 
+class EventTiltPart(BaseModel):
+    """One scored event of the register and the points it adds to the main number (v0.21.0)."""
+
+    catalyst_id: str
+    name: "Text"
+    day: date
+    change: "Text"
+    effect: Literal["up", "down"]
+    strength: int
+    age_days: int
+    weight: float          # 0.5 ^ (age / 30 days), times 1.5 when the story is still open
+    open: bool
+    points: float          # signed, 0.012 = +1.2 percentage points, before the limit on the sum
+
+
 class OracleSummary(BaseModel):
     """Probability that the claim comes true, from several independent methods compared side by side."""
 
@@ -680,16 +706,37 @@ class OracleSummary(BaseModel):
     target_date: date
     low: Optional[float] = None
     high: Optional[float] = None
-    tier: Literal["lottery", "low", "possible", "likely", "unknown"]
+    # since v0.16.1 the five words of tiers.py; cases stored before keep "lottery", "low" and "possible"
+    tier: Literal["almost_no", "unlikely", "uncertain", "likely", "very_likely", "unknown", "lottery", "low", "possible"]
     tier_label: "Text"
     methods: list[ProbabilityMethod] = Field(default_factory=list)
     ladder: list[LadderRow] = Field(default_factory=list)
     agreement: "Text"
     risk_free_rate: Optional[DecimalStr] = None
     condition: Literal["end", "touch"] = "end"  # which probability the range uses
+    # the methods whose results make the headline range (since v0.17.0: the market-based ones, M1 and M2, when they exist);
+    # empty in cases stored before, which keep the older rule
+    counted: list[str] = Field(default_factory=list)
+    basis: Literal["index", "market", "fallback", ""] = ""  # "index" since v0.18.0; the others belong to cases of v0.17.0
+    # since v0.18.0 the headline is one number, a weighted index of the counted methods: low == high == the index
+    weights: dict[str, float] = Field(default_factory=dict)   # method id -> its share of the index (they add up to 1)
+    spread_low: Optional[float] = None                         # the lowest and the highest of the counted methods
+    spread_high: Optional[float] = None
+    calibrated: Optional[float] = None                         # how often the claim came true in the backtest when the index said this
+    # since v0.21.0 the scored events of the catalyst register move the index by a bounded amount: low == high == base + event_tilt
+    base: Optional[float] = None                               # the index of the methods, before the events
+    event_tilt: Optional[float] = None                         # what the events add, after the limits; None when no event is scored
+    event_raw: Optional[float] = None                          # the sum of the points before the limits
+    event_parts: list[EventTiltPart] = Field(default_factory=list)
+    event_note: Optional["Text"] = None
     spot: Optional[float] = None
     base_volatility: Optional[float] = None  # historical volatility, used by the scenario panel
     implied_volatility: Optional[float] = None
+
+    @property
+    def index(self) -> Optional[float]:
+        """The weighted index of the methods: the main number before events (cases stored before v0.21.0 hold it in ``low``)."""
+        return self.base if self.base is not None else self.low
 
 
 class EventMove(BaseModel):
@@ -754,6 +801,7 @@ class ShiftedRange(BaseModel):
     spot_to: float
     low: Optional[float] = None
     high: Optional[float] = None
+    base: Optional[float] = None  # since v0.21.0: the index at that price before the events; low and high hold it with the events
     methods: dict[str, float] = Field(default_factory=dict)  # method id -> probability under the claim's condition
 
 
@@ -889,6 +937,9 @@ class CatalystEvent(BaseModel):
     source_ids: list[str] = Field(default_factory=list)
     sources: list[CatalystSource] = Field(default_factory=list)  # copied, so the register keeps them after the proposal is gone
     reaction: Optional[Reaction] = None
+    # since v0.21.0 Claude scores each event; code turns the scores into points of the main number (event_tilt.py)
+    effect: Literal["up", "down", "none"] = "none"  # does this news make a higher share price more or less likely
+    strength: Optional[int] = None  # 0 not important, 1 minor, 2 material, 3 changes the outlook; None = written before v0.21.0
 
 
 class Catalyst(BaseModel):
@@ -897,7 +948,7 @@ class Catalyst(BaseModel):
     id: str
     name_en: str
     name_zh: str
-    kind: Literal["product", "regulatory", "contract", "financing", "deal", "operations", "legal", "other"] = "other"
+    kind: Literal["product", "regulatory", "contract", "financing", "deal", "operations", "legal", "leadership", "other"] = "other"
     status: Literal["upcoming", "in_progress", "achieved", "delayed", "cancelled"] = "upcoming"
     expected: Optional[str] = None  # as the sources give it: "2027", "2027-H1", "2027-Q2", "2027-03" or "2027-03-15"
     expected_day: Optional[date] = None  # a day for the scenario: the middle of that span
@@ -912,6 +963,22 @@ class Catalyst(BaseModel):
     problems: list[str] = Field(default_factory=list)  # what the check found; empty = every citation, date and number checks out
     proposed_by: Optional[str] = None
     confirmed_at: Optional[datetime] = None
+
+
+class MajorEvent(BaseModel):
+    """An event code found without Claude (v0.20.0): an 8-K item 5.02 filing and the headlines that report a change at the top."""
+
+    kind: Literal["leadership"] = "leadership"
+    day: date                      # the first day it was reported: the filing day, or a headline up to five days before it
+    filing_date: date
+    role: Optional[str] = None     # "CEO", "CFO", "chair", "founder", "president"; None when no headline names one
+    headlines: int = 0             # headlines that name a top role next to a word of change
+    samples: list[NewsItem] = Field(default_factory=list)
+    filing_url: str = ""
+    strong: bool = False           # enough headlines to say what the filing is about
+    reaction: Optional[Reaction] = None
+    in_register: bool = False      # the catalyst register already holds a leadership item around that day
+    register_updated: Optional[date] = None
 
 
 class CatalystRegister(BaseModel):
@@ -937,6 +1004,7 @@ class CatalystProposal(BaseModel):
     error: Optional[str] = None
     decided_at: Optional[datetime] = None
     accepted: list[str] = Field(default_factory=list)
+    dropped: list[list[str]] = Field(default_factory=list)  # v0.21.0: [id, name_en, name_zh, finding] of what the checks kept out
 
 
 class Fact(BaseModel):
@@ -999,6 +1067,15 @@ class ReferenceSnapshot(BaseModel):
     data_modes: dict[str, str] = Field(default_factory=dict)
 
 
+class StaleSource(BaseModel):
+    """A source that did not answer during a live run: the case used the answers it gave earlier, and says so."""
+
+    source: str                 # the outside service, by the name the sequence diagram gives it
+    answers: int                # how many of its answers came from the stored copies
+    captured_at: datetime       # when the oldest of them was fetched
+    age_hours: float            # how old that one was when the case ran
+
+
 class CaseStatus(str, Enum):
     EVALUATED = "evaluated"
     EVALUATED_WITH_PROVIDER_ERRORS = "evaluated_with_provider_errors"
@@ -1037,6 +1114,7 @@ class CaseResult(BaseModel):
     news: Optional[NewsFeed] = None
     earnings: Optional[EarningsDate] = None
     catalysts: Optional[CatalystRegister] = None  # the stock's confirmed catalysts as this case saw them
+    major_events: list[MajorEvent] = Field(default_factory=list)  # found by code on this run (8-K item 5.02 with headlines)
     catalyst_proposal: Optional[CatalystProposal] = None
     data_steps: dict[str, str] = Field(default_factory=dict)  # step -> "ok" | "failed"
     narrative: Optional[Narrative] = None  # the latest narrative written, any language
@@ -1048,6 +1126,8 @@ class CaseResult(BaseModel):
     warnings_zh: list[str] = Field(default_factory=list)
     data_modes: dict[str, str] = Field(default_factory=dict)
     mixed_sources: bool = False
+    # since v0.25.0: the sources that did not answer and whose earlier answers were used (the fallback of risk R.2)
+    stale_sources: list["StaleSource"] = Field(default_factory=list)
     # "not_implemented" is kept so cases saved by v0.1 still load
     analysis_status: Literal["not_run", "deterministic_rules", "not_implemented"] = "not_run"
     disclaimer: str = (

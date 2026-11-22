@@ -72,6 +72,23 @@ class Settings:
     narrative_model: str = "claude-opus-5-5"
     narrative_effort: str = "medium"
     boot_screen: bool = True  # the page opens on the start-up screen; TICKERCASE_BOOT_SCREEN=0 goes straight to the console
+    # how A2 asks its sources (docs/decisions/0001-acquisition-mode.md): "parallel" (selected) asks the SEC and the market
+    # sources side by side, each with its own request spacing; "sequential" asks one source after the other
+    acquisition_mode: str = "parallel"
+    # the fallback of risk R.2 (docs/risks.md): when the market source does not answer, the last good answer to the same
+    # request is used if it is no older than this many hours, and the case says so; 0 switches the fallback off
+    fallback_max_age_hours: float = 72.0
+
+
+ACQUISITION_MODES = ("sequential", "parallel")
+DEFAULT_ACQUISITION_MODE = "parallel"   # selected in docs/decisions/0001-acquisition-mode.md
+
+
+def _acquisition_mode(value) -> str:
+    mode = (value or "").strip().lower() or DEFAULT_ACQUISITION_MODE
+    if mode not in ACQUISITION_MODES:
+        raise ValueError(f"TICKERCASE_ACQUISITION must be one of {ACQUISITION_MODES}, got '{mode}'")
+    return mode
 
 
 def _path(value: str) -> Path:
@@ -105,4 +122,6 @@ def load_settings(env: Optional[Mapping[str, str]] = None, dotenv_path: Optional
         narrative_model=(merged.get("TICKERCASE_NARRATIVE_MODEL") or "").strip() or "claude-opus-5-5",
         narrative_effort=effort,
         boot_screen=(merged.get("TICKERCASE_BOOT_SCREEN") or "1").strip().lower() not in ("0", "false", "no", "off"),
+        acquisition_mode=_acquisition_mode(merged.get("TICKERCASE_ACQUISITION")),
+        fallback_max_age_hours=max(0.0, float(merged.get("TICKERCASE_FALLBACK_HOURS", "72") or 0)),
     )

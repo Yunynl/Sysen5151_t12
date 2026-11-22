@@ -38,8 +38,11 @@ from .models import (
     ReferenceSnapshot,
     ReferenceSuggestion,
     CatalystProposal,
+    StaleSource,
 )
 from .catalysts import fill_reactions
+from .major_events import leadership_events
+from .event_tilt import apply as apply_events, shifted as shifted_with_events
 from .extract import extract_claim
 from .probability import probability_reference
 from .report import build_report
@@ -292,8 +295,13 @@ class CaseService:
         if register is not None and fit is not None:
             fill_reactions(register.catalysts, lambda day: reaction(fit, day), today=self.today())
             self.catalysts.save(register)
+        major = leadership_events(records, news.items if news else (), today=self.today(), register=register)
+        if fit is not None:
+            for event in major:
+                event.reaction = reaction(fit, event.day)
         oracle = build_oracle(claim, market=market, options=options, base_rate=base_rate, price_rate=price_rate,
                               risk_free=risk_free, today=self.today())
+        oracle = apply_events(oracle, register, today=self.today())  # the scored events of the register, as a bounded adjustment
         change = None
         if structure is not None and oracle.spot:
             monthly_url = MONTHLY_URL.format(symbol=yahoo_symbol(claim.ticker))
@@ -304,6 +312,8 @@ class CaseService:
             structure.shifted = shifted_range(claim, oracle, spot_to, market=market,
                                               options=options, base_rate=base_rate, price_rate=price_rate, closes=closes, risk_free=risk_free,
                                               today=self.today())
+            structure.shifted.base = structure.shifted.low
+            structure.shifted.low = structure.shifted.high = shifted_with_events(structure.shifted.base, oracle)
         if self.store is not None and oracle.spot and market is not None:
             previous = find_previous(self.store.list_cases(), claim, oracle, market_date=market.last_date, exclude=case_id)
             if previous is not None:
@@ -334,6 +344,13 @@ class CaseService:
             warn("synthetic example data is used for public sources in this run, not real SEC or market data",
                  "本次公开数据使用合成示例数据，不是真实的 SEC 或市场数据")
 
+        stale = self._stale_sources(sources.stale)
+        for s in stale:     # the fallback of risk R.2: the reader is told which source was away and how old its answers are
+            warn(f"{s.source} did not answer during this run. {s.answers} of its answers come from the copy fetched on "
+                 f"{s.captured_at:%Y-%m-%d %H:%M} UTC ({s.age_hours:g} hours before this run); prices may have moved since.",
+                 f"{s.source} 这次没有应答。它的 {s.answers} 项数据来自 {s.captured_at:%Y-%m-%d %H:%M} UTC 取到的副本"
+                 f"（比这次运行早 {s.age_hours:g} 小时），此后价格可能已经变化。")
+
         result = CaseResult(
             status=CaseStatus.EVALUATED_WITH_PROVIDER_ERRORS if errors else CaseStatus.EVALUATED,
             confirmed_claim=confirmed,
@@ -361,16 +378,27 @@ class CaseService:
             news=news,
             earnings=earnings,
             catalysts=register,
+            major_events=major,
             data_steps=steps,
             provider_errors=errors,
             data_modes=data_modes,
             mixed_sources=bool(records or facts or market),
+            stale_sources=stale,
             analysis_status="deterministic_rules",
             **base,
         )
         result = self._finish(result)
         present.__exit__(None, None, None)
         return result
+
+    def _stale_sources(self, used: list) -> list[StaleSource]:
+        """The fallback answers of one run, by source (risk R.2): how many, and how old the oldest was."""
+        by: dict[str, list[datetime]] = {}
+        for url, captured in used:
+            by.setdefault(timing.external_participant(url), []).append(captured)
+        now = self.now()
+        return [StaleSource(source=name, answers=len(times), captured_at=min(times),
+                            age_hours=round(max(0.0, (now - min(times)).total_seconds() / 3600), 1)) for name, times in sorted(by.items())]
 
     _price_base_rate = staticmethod(fetch_price_base_rate)
     _benchmarks = staticmethod(fetch_benchmarks)
@@ -400,7 +428,7 @@ class CaseService:
 
     def propose_catalysts(self, result: CaseResult, *, mode: str, client=None, progress: Optional[Callable[[str], None]] = None) -> CaseResult:
         """Claude proposes catalysts from 8-K press releases and headlines; code checks them and measures reactions. Two paid calls."""
-        from .catalysts import add_usage, build, proposal_error, scout, source_table
+        from .catalysts import add_usage, build, found_text, proposal_error, scout, source_table
 
         note = progress or (lambda text: None)
         claim = result.confirmed_claim.values
@@ -433,7 +461,8 @@ class CaseService:
             broad += got[0] if got else []
         first = source_table(filings, broad)
         note("themes")
-        terms, res1 = scout(client, first, company=company, ticker=claim.ticker, register=register, model=model, effort=effort)
+        found = found_text(result.major_events)  # a change at the top that code found and the register does not hold
+        terms, res1 = scout(client, first, company=company, ticker=claim.ticker, register=register, model=model, effort=effort, found=found)
         if res1.status != "ok":
             result.catalyst_proposal = proposal_error(res1.status, res1.model, self.now(), res1.error or res1.status, usage=res1.usage, sources=first)
             return self._finish(result)
@@ -450,7 +479,7 @@ class CaseService:
                     targeted.append(got[0])
         sources = source_table(filings, broad, themes=targeted)
         note("catalysts")
-        catalysts, res2 = build(client, sources, company=company, ticker=claim.ticker, register=register, model=model, effort=effort)
+        catalysts, res2 = build(client, sources, company=company, ticker=claim.ticker, register=register, model=model, effort=effort, found=found)
         usage = add_usage(res1.usage, res2.usage)
         if res2.status != "ok":
             result.catalyst_proposal = proposal_error(res2.status, res2.model, self.now(), res2.error or res2.status, usage=usage, sources=sources, themes=terms)
@@ -464,7 +493,36 @@ class CaseService:
                                                     error="; ".join(f"{e.provider_id}: {e.code}" for e in errors) or None)
         return self._finish(result)
 
-    def confirm_catalysts(self, result: CaseResult, accepted: list[str]) -> CaseResult:
+    def update_catalysts(self, result: CaseResult, *, mode: str, client=None, progress: Optional[Callable[[str], None]] = None) -> CaseResult:
+        """One key (v0.21.0): propose, check, write what passes into the register, and add the events to the number. Two paid calls."""
+        return self.auto_confirm(self.propose_catalysts(result, mode=mode, client=client, progress=progress))
+
+    def auto_confirm(self, result: CaseResult) -> CaseResult:
+        """Decide a waiting proposal by the checks alone: what passes joins the register, the rest is listed as dropped."""
+        from .catalysts import prune
+
+        proposal = result.catalyst_proposal
+        if proposal is None or proposal.status != "ok" or proposal.decided_at is not None:
+            return result
+        kept, dropped = prune(proposal.catalysts)
+        result.catalyst_proposal = proposal.model_copy(update={"catalysts": kept, "dropped": dropped})
+        return self.confirm_catalysts(result, [c.id for c in kept], remember=False)
+
+    def _retilt(self, result: CaseResult) -> None:
+        """After the register changed: the events are added again to the same index, and the alerts read the new register."""
+        from .major_events import covered
+
+        register = result.catalysts
+        if result.oracle is not None:
+            result.oracle = apply_events(result.oracle, register, today=self.today())
+            sh = result.structure.shifted if result.structure is not None else None
+            if sh is not None and sh.base is not None:
+                sh.low = sh.high = shifted_with_events(sh.base, result.oracle)
+        for e in result.major_events:
+            e.in_register = covered(register, e.day)
+            e.register_updated = register.updated_at.date() if register is not None else None
+
+    def confirm_catalysts(self, result: CaseResult, accepted: list[str], *, remember: bool = True) -> CaseResult:
         """Write the accepted proposals into the stock's register; remember rejected names."""
         from .catalysts import merge
 
@@ -474,10 +532,11 @@ class CaseService:
         claim = result.confirmed_claim.values
         current = self.catalysts.get(claim.ticker) if self.catalysts is not None else result.catalysts
         register = merge(current, proposal, accepted, ticker=claim.ticker,
-                         company=self._company(result.reported_facts, result.evidence_records, claim.ticker), now=self.now())
+                         company=self._company(result.reported_facts, result.evidence_records, claim.ticker), now=self.now(), remember=remember)
         if self.catalysts is not None:
             self.catalysts.save(register)
         result.catalysts = register
+        self._retilt(result)
         result.catalyst_proposal = proposal.model_copy(update={"decided_at": self.now(), "accepted": list(accepted)})
         return self._finish(result)
 
@@ -491,6 +550,7 @@ class CaseService:
         if self.catalysts is not None:
             self.catalysts.save(register)
         result.catalysts = register
+        self._retilt(result)
         return self._finish(result)
 
     # ---------------------------------------------------------------- AI narrative
